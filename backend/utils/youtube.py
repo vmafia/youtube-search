@@ -97,6 +97,9 @@ class YouTubeClient:
         try:
             if self.api_key:
                 videos = self._fetch_via_api(channel_name, limit)
+            elif is_assabiqoon:
+                logger.info("Bypassing scraping for @AssabiqoonPublisher to avoid Vercel block")
+                videos = ASSABIQOON_PLAYLIST_FALLBACK
             else:
                 videos = self._fetch_via_scraping(channel_name, limit)
         except Exception as e:
@@ -106,6 +109,7 @@ class YouTubeClient:
                 videos = ASSABIQOON_PLAYLIST_FALLBACK
             else:
                 raise ValueError(f"Could not retrieve videos for channel: {channel_name}. Error: {str(e)}")
+
 
         if not videos and is_assabiqoon:
             videos = ASSABIQOON_PLAYLIST_FALLBACK
