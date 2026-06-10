@@ -3,6 +3,9 @@ import time
 import json
 import logging
 import requests
+import subprocess
+import glob
+import re
 from typing import List, Dict, Any, Optional
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 import scrapetube
@@ -244,26 +247,130 @@ class YouTubeClient:
                 transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
                 transcript = transcript_list.find_transcript(["th", "en"]).fetch()
             except Exception as inner_e:
-                logger.error(f"Fallback transcript fetching failed for {video_id}: {str(inner_e)}")
-                # Try to use mock data for specific demonstration videos if available
-                if video_id in ASSABIQOON_TRANSCRIPT_FALLBACK:
-                    logger.info(f"Using mock transcript fallback for {video_id}")
-                    transcript = ASSABIQOON_TRANSCRIPT_FALLBACK[video_id]
-                else:
-                    raise ValueError(f"No transcripts found/enabled for video: {video_id}")
+                logger.warning(f"Fallback transcript fetching failed for {video_id}: {str(inner_e)}. Trying yt-dlp fallback...")
+                transcript = self._download_subs_yt_dlp(video_id)
         except Exception as e:
-            logger.error(f"Error fetching transcript for {video_id}: {str(e)}")
+            logger.warning(f"Error fetching transcript via standard API for {video_id}: {str(e)}. Trying yt-dlp fallback...")
+            try:
+                transcript = self._download_subs_yt_dlp(video_id)
+            except Exception as dlp_err:
+                logger.error(f"yt-dlp fallback failed: {dlp_err}")
+
+        # Final mock data fallback if all else fails
+        if not transcript:
             if video_id in ASSABIQOON_TRANSCRIPT_FALLBACK:
                 logger.info(f"Using mock transcript fallback for {video_id}")
                 transcript = ASSABIQOON_TRANSCRIPT_FALLBACK[video_id]
             else:
-                raise e
+                raise ValueError(f"Transcript unavailable for video {video_id}")
 
         if transcript:
             self.db_manager.set_document("transcripts", video_id, transcript)
             return transcript
             
         raise ValueError(f"Transcript unavailable for video {video_id}")
+
+    import sys
+    def _parse_time(self, t_str):
+        try:
+            t_str = t_str.strip().replace(',', '.')
+            parts = t_str.split(':')
+            if len(parts) == 3:
+                h = int(parts[0])
+                m = int(parts[1])
+                s = float(parts[2])
+                return h * 3600 + m * 60 + s
+            elif len(parts) == 2:
+                m = int(parts[0])
+                s = float(parts[1])
+                return m * 60 + s
+        except Exception as e:
+            logger.error(f"Error parsing time string '{t_str}': {e}")
+        return 0.0
+
+    def _parse_vtt(self, file_path):
+        transcript = []
+        if not os.path.exists(file_path):
+            return None
+            
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            blocks = re.split(r'\n\s*\n', content)
+            for block in blocks:
+                lines = block.strip().split('\n')
+                if not lines:
+                    continue
+                timestamp_idx = -1
+                for idx, line in enumerate(lines):
+                    if '-->' in line:
+                        timestamp_idx = idx
+                        break
+                if timestamp_idx == -1:
+                    continue
+                times = lines[timestamp_idx].split('-->')
+                if len(times) != 2:
+                    continue
+                start = self._parse_time(times[0])
+                end = self._parse_time(times[1])
+                duration = max(0.0, end - start)
+                text_lines = lines[timestamp_idx+1:]
+                text = " ".join([re.sub(r'<[^>]+>', '', l).strip() for l in text_lines if l.strip()])
+                if text:
+                    transcript.append({
+                        "text": text,
+                        "start": start,
+                        "duration": duration
+                    })
+            return transcript
+        except Exception as e:
+            logger.error(f"Failed to parse VTT file {file_path}: {e}")
+            return None
+
+    def _download_subs_yt_dlp(self, video_id):
+        # Temp dir in root/scratch
+        temp_dir = os.path.join(Config.CACHE_DIR, "temp_subs")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        output_tmpl = os.path.join(temp_dir, f"{video_id}")
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+        
+        cmd = [
+            sys.executable, "-m", "yt_dlp",
+            "--write-auto-subs",
+            "--write-subs",
+            "--skip-download",
+            "--sub-langs", "th",
+            "--sub-format", "vtt",
+            "--ignore-no-formats-error",
+            "--quiet",
+            "-o", output_tmpl
+        ]
+        
+        # Check if cookies.txt is in project root directory
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        cookies_path = os.path.join(base_dir, "cookies.txt")
+        if os.path.exists(cookies_path):
+            cmd.extend(["--cookies", cookies_path])
+            logger.info(f"Using cookies.txt from {cookies_path} in yt-dlp fallback")
+            
+        cmd.append(video_url)
+        
+        try:
+            subprocess.run(cmd, check=True, capture_output=True)
+            pattern = os.path.join(temp_dir, f"{video_id}.*vtt")
+            matches = glob.glob(pattern)
+            if matches:
+                sub_file = matches[0]
+                transcript = self._parse_vtt(sub_file)
+                try:
+                    os.remove(sub_file)
+                except Exception:
+                    pass
+                return transcript
+        except Exception as e:
+            logger.warning(f"yt-dlp fallback download failed for {video_id}: {e}")
+        return None
 
     def search_youtube_api(self, channel_name: str, query: str) -> List[Dict[str, Any]]:
         """
