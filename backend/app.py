@@ -135,7 +135,7 @@ def search():
     results = []
     
     # 1. Search locally cached transcripts first
-    for vid in video_ids_to_process:
+    for vid in video_ids:
         vid = sanitize_input(vid)
         try:
             transcript = youtube_client.db_manager.get_document("transcripts", vid)
