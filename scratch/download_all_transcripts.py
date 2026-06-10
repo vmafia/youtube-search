@@ -14,8 +14,9 @@ from backend.config import Config
 
 def main():
     channel_name = "@AssabiqoonPublisher"
-    if len(sys.argv) > 1:
-        channel_name = sys.argv[1].strip()
+    args = [arg for arg in sys.argv[1:] if arg not in ("--yes", "-y")]
+    if args:
+        channel_name = args[0].strip()
         
     print(f"[*] Initializing YouTubeClient...")
     client = YouTubeClient(api_key=Config.YOUTUBE_API_KEY, cache_dir=Config.CACHE_DIR)
@@ -56,10 +57,13 @@ def main():
         print("\n[!] WARNING: cookies.txt is not found in the root directory.")
         print("    YouTube might rate-limit or block this script after a few videos.")
         print("    It is highly recommended to Export cookies.txt from your browser to bypass blocks.")
-        response = input("Do you want to continue anyway? (y/n): ").strip().lower()
-        if response != 'y':
-            print("Aborted.")
-            return
+        if "--yes" in sys.argv or "-y" in sys.argv:
+            print("[*] Continuing anyway because --yes flag is set.")
+        else:
+            response = input("Do you want to continue anyway? (y/n): ").strip().lower()
+            if response != 'y':
+                print("Aborted.")
+                return
             
     print("\n[*] Starting downloads...")
     success_count = 0
