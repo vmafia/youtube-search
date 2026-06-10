@@ -68,34 +68,12 @@ def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0):
         return wrapper
     return decorator
 
+from backend.utils.db import DatabaseManager
+
 class YouTubeClient:
     def __init__(self, api_key: Optional[str] = None, cache_dir: str = Config.CACHE_DIR):
         self.api_key = api_key
-        self.cache_dir = cache_dir
-        os.makedirs(cache_dir, exist_ok=True)
-
-    def _get_cache_path(self, key: str) -> str:
-        # Sanitise file names
-        clean_key = "".join([c if c.isalnum() else "_" for c in key])
-        return os.path.join(self.cache_dir, f"{clean_key}.json")
-
-    def _read_cache(self, key: str) -> Optional[Any]:
-        path = self._get_cache_path(key)
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error reading cache for {key}: {str(e)}")
-        return None
-
-    def _write_cache(self, key: str, data: Any) -> None:
-        path = self._get_cache_path(key)
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.error(f"Error writing cache for {key}: {str(e)}")
+        self.db_manager = DatabaseManager(cache_dir)
 
     @retry_with_backoff(retries=3, backoff_in_seconds=1.0)
     def fetch_channel_videos(self, channel_name: str, limit: int = 100) -> List[Dict[str, Any]]:
@@ -108,7 +86,7 @@ class YouTubeClient:
         
         # Check cache
         cache_key = f"channel_videos_{channel_name}_{limit}"
-        cached_data = self._read_cache(cache_key)
+        cached_data = self.db_manager.get_document("channel_videos", cache_key)
         if cached_data:
             logger.info(f"Returning cached videos list for {channel_name}")
             return cached_data
@@ -133,9 +111,10 @@ class YouTubeClient:
             videos = ASSABIQOON_PLAYLIST_FALLBACK
 
         if videos:
-            self._write_cache(cache_key, videos)
+            self.db_manager.set_document("channel_videos", cache_key, videos)
             
         return videos
+
 
     def _fetch_via_api(self, channel_name: str, limit: int) -> List[Dict[str, Any]]:
         # Handle handles like @AssabiqoonPublisher
@@ -216,10 +195,9 @@ class YouTubeClient:
         """
         Fetches the transcript for a specific video ID.
         Tries Thai first, then English, then any available.
-        Caches results locally.
+        Caches results locally/Firestore.
         """
-        cache_key = f"transcript_{video_id}"
-        cached_data = self._read_cache(cache_key)
+        cached_data = self.db_manager.get_document("transcripts", video_id)
         if cached_data:
             logger.info(f"Returning cached transcript for video {video_id}")
             return cached_data
@@ -251,7 +229,8 @@ class YouTubeClient:
                 raise e
 
         if transcript:
-            self._write_cache(cache_key, transcript)
+            self.db_manager.set_document("transcripts", video_id, transcript)
             return transcript
             
         raise ValueError(f"Transcript unavailable for video {video_id}")
+

@@ -1,0 +1,22 @@
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.venv/
+venv/
+backend/cache/
+backend/logs/
+
+# Node
+**/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Environment and Git
+.git/
+.gitignore
+.env
+.env*.local
+*.md

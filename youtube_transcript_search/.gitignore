@@ -1,0 +1,26 @@
+# Secrets and configs
+backend/firebase-credentials.json
+.env
+.env*.local
+*.log
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.venv/
+venv/
+backend/cache/
+backend/logs/
+
+# Node / Frontend
+**/node_modules/
+frontend/dist/
+frontend/.vite/
+.eslintcache
+
+# OS files
+.DS_Store
+Thumbs.db

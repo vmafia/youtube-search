@@ -22,9 +22,10 @@ def test_cache_mechanism(tmp_path):
     client = YouTubeClient(cache_dir=str(tmp_path))
     
     # Write and read
-    client._write_cache("test_key", {"data": 123})
-    data = client._read_cache("test_key")
+    client.db_manager.set_document("transcripts", "test_key", {"data": 123})
+    data = client.db_manager.get_document("transcripts", "test_key")
     assert data == {"data": 123}
+
 
 @patch('backend.utils.youtube.requests.get')
 def test_fetch_via_api(mock_get, tmp_path):

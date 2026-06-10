@@ -8,3 +8,12 @@
 [2026-06-10 15:01:33,753] WARNING in app: Bad Request: video_id parameter is required
 [2026-06-10 15:02:22,224] WARNING in app: Rate limit exceeded by 127.0.0.1
 [2026-06-10 15:02:22,227] WARNING in youtube: Retrying failing_func in 0.1s due to error: Transient error
+[2026-06-10 15:33:17,795] WARNING in db: FIREBASE_SERVICE_ACCOUNT_JSON is not defined. Falling back to local file caching.
+[2026-06-10 15:33:17,826] WARNING in app: Bad Request: channel_name parameter is required
+[2026-06-10 15:33:17,833] WARNING in app: Bad Request: video_id parameter is required
+[2026-06-10 15:34:09,531] WARNING in app: Rate limit exceeded by 127.0.0.1
+[2026-06-10 15:34:09,533] WARNING in youtube: Retrying failing_func in 0.1s due to error: Transient error
+[2026-06-10 15:34:09,642] WARNING in db: FIREBASE_SERVICE_ACCOUNT_JSON is not defined. Falling back to local file caching.
+[2026-06-10 15:34:09,648] WARNING in db: FIREBASE_SERVICE_ACCOUNT_JSON is not defined. Falling back to local file caching.
+[2026-06-10 15:34:09,653] WARNING in db: FIREBASE_SERVICE_ACCOUNT_JSON is not defined. Falling back to local file caching.
+[2026-06-10 15:34:09,656] WARNING in db: FIREBASE_SERVICE_ACCOUNT_JSON is not defined. Falling back to local file caching.
