@@ -45,14 +45,14 @@ def test_video_transcript_success(mock_fetch_transcript, client):
     assert response.json["video_id"] == "vid1"
     assert response.json["transcript"] == mock_transcript
 
-@patch.object(youtube_client, 'fetch_video_transcript')
-def test_search_endpoint(mock_fetch_transcript, client):
+@patch.object(youtube_client.db_manager, 'get_document')
+def test_search_endpoint(mock_get_document, client):
     mock_transcript = [
         {"text": "สวัสดีครับพี่น้อง", "start": 1.0, "duration": 2.0},
         {"text": "วันนี้เสนอเรื่องแนวทางที่ถูกต้อง", "start": 3.0, "duration": 3.0},
         {"text": "Welcome to our class", "start": 6.0, "duration": 2.0}
     ]
-    mock_fetch_transcript.return_value = mock_transcript
+    mock_get_document.return_value = mock_transcript
 
     # 1. Exact/Substring match (Thai)
     response = client.post("/api/search", json={"video_ids": ["vid1"], "query": "แนวทาง"})
