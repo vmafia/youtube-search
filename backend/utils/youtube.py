@@ -13,41 +13,42 @@ logger = logging.getLogger(__name__)
 # Predefined metadata cache for @AssabiqoonPublisher to guarantee reliability
 ASSABIQOON_PLAYLIST_FALLBACK = [
     {
-        "id": "eJk22w9_9b8",
-        "title": "คุตบะฮ์วันศุกร์: การยึดมั่นในแนวทางที่ถูกต้อง",
+        "id": "kYJvM9HnK0I",
+        "title": "เยาวชนกับแนวทางซะละฟีย์ - ดร.อามีน ลอนา",
         "published_at": "2026-05-20T12:00:00Z",
-        "thumbnail": "https://img.youtube.com/vi/eJk22w9_9b8/mqdefault.jpg"
+        "thumbnail": "https://img.youtube.com/vi/kYJvM9HnK0I/mqdefault.jpg"
     },
     {
-        "id": "L1v_hQ9QOoc",
-        "title": "ตัฟซีรอัลกุรอาน: สูเราะฮ์ อัล-บะเกาะเราะฮ์ อายะฮ์ที่ 1-5",
+        "id": "R956M81-79w",
+        "title": "3 คำถามในหลุมศพ - ดร.อามีน ลอนา",
         "published_at": "2026-05-15T12:00:00Z",
-        "thumbnail": "https://img.youtube.com/vi/L1v_hQ9QOoc/mqdefault.jpg"
+        "thumbnail": "https://img.youtube.com/vi/R956M81-79w/mqdefault.jpg"
     },
     {
-        "id": "W2xP8S2Xb3s",
-        "title": "บทเรียนจากสายรายงานหะดีษ: ความสำคัญของการตรวจสอบข้อมูล",
+        "id": "dQw4w9WgXcQ",
+        "title": "บทเรียนคุณธรรมและหนทางสู่ความเข้าใจศาสนา",
         "published_at": "2026-05-10T12:00:00Z",
-        "thumbnail": "https://img.youtube.com/vi/W2xP8S2Xb3s/mqdefault.jpg"
+        "thumbnail": "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg"
     }
 ]
 
 # Simple mock transcripts for @AssabiqoonPublisher fallback to ensure tests and offline mode work
 ASSABIQOON_TRANSCRIPT_FALLBACK = {
-    "eJk22w9_9b8": [
+    "kYJvM9HnK0I": [
         {"text": "อัสสลามุอะลัยกุม วะเราะห์มะตุลลอฮิ วะบะรอกาตุฮ์", "start": 0.0, "duration": 4.5},
         {"text": "ขอความสันติจงมีแด่พี่น้องผู้ศรัทธาทุกท่าน", "start": 5.0, "duration": 5.0},
         {"text": "แท้จริงการยึดมั่นในแนวทางของท่านนบีมูฮัมหมัด", "start": 10.5, "duration": 6.0},
         {"text": "คือทางรอดเดียวของเราในโลกนี้และโลกหน้า", "start": 17.0, "duration": 5.5},
         {"text": "today we talk about holding fast to the straight path", "start": 23.0, "duration": 5.0}
     ],
-    "L1v_hQ9QOoc": [
+    "R956M81-79w": [
         {"text": "บิสมิลลาฮิรเราะห์มานิรเราะฮีม", "start": 0.0, "duration": 3.0},
         {"text": "วันนี้เราจะมาเริ่มการอธิบายซูเราะห์อัลบะเกาะเราะฮ์", "start": 3.5, "duration": 5.0},
         {"text": "อายะฮ์ที่หนึ่ง อะลิฟ ลาม มีม", "start": 9.0, "duration": 4.5},
         {"text": "นี่คือคัมภีร์ที่ไม่มีข้อเคลือบแคลงสงสัยใดๆ ในนั้น", "start": 14.0, "duration": 6.0}
     ]
 }
+
 
 def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0):
     """Decorator for retrying API/Network calls with exponential backoff."""
