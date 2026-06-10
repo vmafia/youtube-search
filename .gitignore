@@ -3,6 +3,8 @@ backend/firebase-credentials.json
 .env
 .env*.local
 *.log
+cookies.txt
+cookies.txt.txt
 
 # Python
 **/__pycache__/
