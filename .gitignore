@@ -1,5 +1,6 @@
 # Secrets and configs
 backend/firebase-credentials.json
+*-adminsdk-*.json
 .env
 .env*.local
 *.log
