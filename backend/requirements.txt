@@ -2,7 +2,7 @@ Flask==3.0.3
 Flask-Cors==4.0.1
 Flask-Limiter==3.7.0
 requests==2.31.0
-youtube-transcript-api==0.6.2
+youtube-transcript-api==1.2.4
 scrapetube==2.5.1
 rapidfuzz==3.9.0
 python-dotenv==1.0.1

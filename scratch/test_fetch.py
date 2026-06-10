@@ -7,8 +7,13 @@ if len(sys.argv) > 1:
 
 print(f"Fetching transcript for: {video_id}")
 try:
-    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
+    fetched = YouTubeTranscriptApi().fetch(video_id, languages=["th", "en"])
+    transcript = [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
     print("Success!")
-    print(transcript[:5])
+    # Avoid encoding crash when printing Thai characters by printing only count and ASCII representation
+    print(f"Retrieved {len(transcript)} snippets.")
+    if transcript:
+        first = transcript[0]
+        print(f"First snippet: start={first['start']}, duration={first['duration']}, text_len={len(first['text'])}")
 except Exception as e:
     print(f"Failed: {type(e).__name__}: {e}")
