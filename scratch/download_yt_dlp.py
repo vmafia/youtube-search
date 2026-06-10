@@ -106,9 +106,15 @@ def download_subs_yt_dlp(video_id):
         "--sub-langs", "th",
         "--sub-format", "vtt",
         "--quiet",
-        "-o", output_tmpl,
-        video_url
+        "-o", output_tmpl
     ]
+    
+    # Use cookies.txt if available to bypass 429 blocks
+    cookies_path = os.path.join(base_dir, "cookies.txt")
+    if os.path.exists(cookies_path):
+        cmd.extend(["--cookies", cookies_path])
+        
+    cmd.append(video_url)
     
     try:
         # Run yt-dlp
