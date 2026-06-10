@@ -4,7 +4,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 cookies_path = os.path.join(base_dir, "cookies.txt")
-video_id = "ZqXDmBl6WMU"
+video_id = "WAN704dCy-g"
 
 print(f"Using cookies path: {cookies_path}")
 try:
