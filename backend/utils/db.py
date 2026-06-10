@@ -70,6 +70,25 @@ class DatabaseManager:
                 logger.error(f"Local cache read error for {doc_id}: {str(e)}")
         return None
 
+    def get_all_document_ids(self, collection: str) -> list:
+        """Gets all document IDs in a collection from Firestore or falls back to local cache."""
+        if self.use_firebase and self.db:
+            try:
+                docs = self.db.collection(collection).select([]).stream()
+                return [doc.id for doc in docs]
+            except Exception as e:
+                logger.error(f"Firestore list_documents error in {collection}: {str(e)}")
+
+        # Fallback to local files
+        local_dir = os.path.join(self.cache_dir, collection)
+        if os.path.exists(local_dir):
+            try:
+                return [f[:-5] for f in os.listdir(local_dir) if f.endswith(".json")]
+            except Exception as e:
+                logger.error(f"Local cache list error for {collection}: {str(e)}")
+        return []
+
+
     def set_document(self, collection: str, doc_id: str, data: Any) -> None:
         """Saves a document to Firestore and duplicates locally."""
         if self.use_firebase and self.db:

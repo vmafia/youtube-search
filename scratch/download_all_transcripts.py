@@ -32,14 +32,17 @@ def main():
     total_videos = len(videos)
     print(f"[+] Found {total_videos} videos in channel.")
     
-    # Check what is already cached
+    # Check what is already cached using bulk ID checking
+    print(f"[*] Fetching cached transcript list from database...")
+    cached_ids = set(client.db_manager.get_all_document_ids("transcripts"))
+    
     cached_count = 0
     to_download = []
     
     for idx, video in enumerate(videos, 1):
         video_id = video["id"]
-        # Check if transcript already exists in cache
-        if client.db_manager.get_document("transcripts", video_id):
+        # Check if transcript already exists in cache (O(1) set lookup)
+        if video_id in cached_ids:
             cached_count += 1
         else:
             to_download.append(video)

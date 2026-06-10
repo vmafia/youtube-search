@@ -13,7 +13,8 @@ def client():
 def test_health_endpoint(client):
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json == {"status": "healthy"}
+    assert response.json["status"] == "healthy"
+    assert "database" in response.json
 
 def test_channel_videos_validation(client):
     response = client.post("/api/channel-videos", json={})

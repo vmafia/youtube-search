@@ -383,10 +383,10 @@ class YouTubeClient:
             logger.warning(f"yt-dlp fallback download failed for {video_id}: {e}")
         return None
 
-    def search_youtube_api(self, channel_name: str, query: str) -> List[Dict[str, Any]]:
+    def search_youtube_api(self, channel_name: str, query: str, max_results: int = 50) -> List[Dict[str, Any]]:
         """
         Searches YouTube search API specifically inside a channel.
-        Returns list of matching video details.
+        Supports paginating to return up to max_results.
         """
         if not self.api_key:
             return []
@@ -407,27 +407,44 @@ class YouTubeClient:
                 
             # 2. Search videos containing query in channel
             search_url = "https://www.googleapis.com/youtube/v3/search"
-            params = {
-                "part": "snippet",
-                "channelId": channel_id,
-                "q": query,
-                "type": "video",
-                "maxResults": 15,
-                "key": self.api_key
-            }
-            sr = requests.get(search_url, params=params, timeout=5)
-            sr.raise_for_status()
-            sdata = sr.json()
-            
             results = []
-            for item in sdata.get("items", []):
-                video_id = item["id"]["videoId"]
-                results.append({
-                    "id": video_id,
-                    "title": item["snippet"]["title"],
-                    "thumbnail": item["snippet"]["thumbnails"].get("medium", {}).get("url", f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg")
-                })
-            return results
+            next_page_token = None
+            
+            while len(results) < max_results:
+                params = {
+                    "part": "snippet",
+                    "channelId": channel_id,
+                    "q": query,
+                    "type": "video",
+                    "maxResults": min(max_results - len(results), 50),
+                    "key": self.api_key
+                }
+                if next_page_token:
+                    params["pageToken"] = next_page_token
+                    
+                sr = requests.get(search_url, params=params, timeout=5)
+                sr.raise_for_status()
+                sdata = sr.json()
+                
+                items = sdata.get("items", [])
+                if not items:
+                    break
+                    
+                for item in items:
+                    video_id = item["id"].get("videoId")
+                    if not video_id:
+                        continue
+                    results.append({
+                        "id": video_id,
+                        "title": item["snippet"]["title"],
+                        "thumbnail": item["snippet"]["thumbnails"].get("medium", {}).get("url", f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg")
+                    })
+                    
+                next_page_token = sdata.get("nextPageToken")
+                if not next_page_token:
+                    break
+                    
+            return results[:max_results]
         except Exception as e:
             logger.error(f"Error searching YouTube API for {query} in {channel_name}: {e}")
             return []

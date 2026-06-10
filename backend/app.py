@@ -29,7 +29,6 @@ if not Config.IS_VERCEL:
     file_handler.setLevel(logging.WARNING)  # Log warnings and errors to file
     logger.addHandler(file_handler)
 
-
 # Console log handler
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
@@ -139,15 +138,20 @@ def search():
         
     results = []
     
-    # 1. Search locally cached transcripts first
-    # Optimization: On Vercel, if Firebase is not enabled, the local cache (/tmp/cache) is empty.
-    # We skip checking 3,000+ files to avoid serverless function timeouts.
-    skip_cache = Config.IS_VERCEL and not youtube_client.db_manager.use_firebase
-    if not skip_cache:
+    # Hybrid search strategy to prevent timeouts:
+    # - If we have a small number of videos, search them directly.
+    # - If we have a large number of videos, query YouTube Search API first to find candidates.
+    if len(video_ids) <= 10:
+        # Direct database search for small list
         for vid in video_ids:
             vid = sanitize_input(vid)
             try:
                 transcript = youtube_client.db_manager.get_document("transcripts", vid)
+                if not transcript and not Config.IS_VERCEL:
+                    try:
+                        transcript = youtube_client.fetch_video_transcript(vid)
+                    except Exception:
+                        pass
                 if not transcript:
                     continue
                     
@@ -158,75 +162,52 @@ def search():
                         "matches": matches
                     })
             except Exception as e:
-                logger.warning(f"Skipping video {vid} during batch search: {str(e)}")
+                logger.warning(f"Skipping video {vid} during direct search: {str(e)}")
                 continue
-            
-    def generate_estimated_matches(q: str) -> list:
-        return [
-            {
-                "text": f"... อธิบายรายละเอียดเกี่ยวกับ [ {q} ] ในช่วงแนะนำบทเรียน ...",
-                "start": 125.0,
-                "end": 135.0,
-                "timestamp": "02:05",
-                "score": 95.0,
-                "match_type": "estimated"
-            },
-            {
-                "text": f"... ประเด็นสำคัญเรื่อง [ {q} ] ที่มุสลิมควรทราบ ...",
-                "start": 740.0,
-                "end": 750.0,
-                "timestamp": "12:20",
-                "score": 85.0,
-                "match_type": "estimated"
-            },
-            {
-                "text": f"... สรุปและตอบคำถามท้ายบทเรียนเกี่ยวกับ [ {q} ] ...",
-                "start": 1455.0,
-                "end": 1465.0,
-                "timestamp": "24:15",
-                "score": 70.0,
-                "match_type": "estimated"
-            }
-        ]
-
-    # 2. Fallback: If no results found, search YouTube Search API directly inside the channel
-    if not results:
+    else:
+        # Candidate search via YouTube Search API for large list (up to 100 candidates)
         channel_name = sanitize_input(data.get("channel_name", "@AssabiqoonPublisher"))
-        logger.info(f"Local cache search returned 0 results. Falling back to YouTube Search API for query: {query}")
-        matched_videos = youtube_client.search_youtube_api(channel_name, query)
+        logger.info(f"Large video list ({len(video_ids)}). Querying YouTube Search API to narrow down candidates.")
+        
+        matched_videos = youtube_client.search_youtube_api(channel_name, query, max_results=100)
+        selected_set = set(video_ids)
+        
         for m_vid in matched_videos:
             vid_id = m_vid["id"]
-            # Optimization: If on Vercel, do not attempt on-the-fly transcript downloading
-            # during search to prevent serverless function timeouts.
-            # Return video match with generated estimated matches.
-            if Config.IS_VERCEL:
-                results.append({
-                    "video_id": vid_id,
-                    "matches": generate_estimated_matches(query),
-                    "title": m_vid["title"],
-                    "thumbnail": m_vid["thumbnail"]
-                })
+            if vid_id not in selected_set:
                 continue
                 
-            # Attempt to fetch transcript for this matching video on-the-fly (since it's only 1-2 videos, it's very safe)
             try:
-                transcript = youtube_client.fetch_video_transcript(vid_id)
-                matches = search_transcript(transcript, query, threshold=threshold)
-                results.append({
-                    "video_id": vid_id,
-                    "matches": matches,
-                    "title": m_vid["title"],
-                    "thumbnail": m_vid["thumbnail"]
-                })
+                transcript = youtube_client.db_manager.get_document("transcripts", vid_id)
+                # If transcript not found in DB, try fetching on-the-fly if not on Vercel
+                if not transcript and not Config.IS_VERCEL:
+                    try:
+                        transcript = youtube_client.fetch_video_transcript(vid_id)
+                    except Exception:
+                        pass
+                
+                if transcript:
+                    matches = search_transcript(transcript, query, threshold=threshold)
+                    if matches:
+                        results.append({
+                            "video_id": vid_id,
+                            "matches": matches,
+                            "title": m_vid["title"],
+                            "thumbnail": m_vid["thumbnail"]
+                        })
+                else:
+                    # Transcript is missing. Do not generate fake matches.
+                    # Return video metadata and mark transcript as missing.
+                    results.append({
+                        "video_id": vid_id,
+                        "matches": [],
+                        "title": m_vid["title"],
+                        "thumbnail": m_vid["thumbnail"],
+                        "transcript_missing": True
+                    })
             except Exception as e:
-                logger.warning(f"Could not download transcript on-the-fly for fallback video {vid_id}: {str(e)}")
-                # Return video match with generated estimated matches
-                results.append({
-                    "video_id": vid_id,
-                    "matches": generate_estimated_matches(query),
-                    "title": m_vid["title"],
-                    "thumbnail": m_vid["thumbnail"]
-                })
+                logger.warning(f"Error checking candidate video {vid_id}: {str(e)}")
+                continue
                 
     return jsonify({
         "query": query,
