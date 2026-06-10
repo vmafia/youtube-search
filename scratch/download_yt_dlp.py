@@ -105,6 +105,7 @@ def download_subs_yt_dlp(video_id):
         "--skip-download",
         "--sub-langs", "th",
         "--sub-format", "vtt",
+        "--js-runtimes", "node",
         "--quiet",
         "-o", output_tmpl
     ]
@@ -199,8 +200,9 @@ def main():
             logger.warning(f"-> Subtitles unavailable/could not download for {video_id}")
             failed_count += 1
             
-        # Mild pause to be polite
-        time.sleep(0.5)
+        # Mild pause to be polite and avoid rate limits
+        import random
+        time.sleep(random.uniform(2.0, 4.0))
         
     logger.info("========================================")
     logger.info("yt-dlp Transcript downloading completed!")
