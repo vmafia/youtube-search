@@ -11,13 +11,19 @@ class Config:
     YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
     
     # Cache and limits
-    CACHE_DIR = os.environ.get("CACHE_DIR", os.path.join(os.path.dirname(__file__), "cache"))
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    IS_VERCEL = os.environ.get("VERCEL") == "1"
     
-    # Log path
-    LOG_DIR = os.environ.get("LOG_DIR", os.path.join(os.path.dirname(__file__), "logs"))
+    if IS_VERCEL:
+        CACHE_DIR = "/tmp/cache"
+        LOG_DIR = "/tmp/logs"
+    else:
+        CACHE_DIR = os.environ.get("CACHE_DIR", os.path.join(os.path.dirname(__file__), "cache"))
+        LOG_DIR = os.environ.get("LOG_DIR", os.path.join(os.path.dirname(__file__), "logs"))
+        
+    os.makedirs(CACHE_DIR, exist_ok=True)
     os.makedirs(LOG_DIR, exist_ok=True)
     LOG_FILE = os.path.join(LOG_DIR, "app.log")
     
     # Limit settings
     RATELIMIT_DEFAULT = "30 per minute"
+

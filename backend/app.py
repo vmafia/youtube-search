@@ -20,13 +20,15 @@ formatter = logging.Formatter(
     '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
 )
 
-# File log handler
-file_handler = RotatingFileHandler(
-    Config.LOG_FILE, maxBytes=10000000, backupCount=5, encoding="utf-8"
-)
-file_handler.setFormatter(formatter)
-file_handler.setLevel(logging.WARNING)  # Log warnings and errors to file
-logger.addHandler(file_handler)
+# File log handler (disabled in Vercel Serverless environment)
+if not Config.IS_VERCEL:
+    file_handler = RotatingFileHandler(
+        Config.LOG_FILE, maxBytes=10000000, backupCount=5, encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.WARNING)  # Log warnings and errors to file
+    logger.addHandler(file_handler)
+
 
 # Console log handler
 console_handler = logging.StreamHandler()
