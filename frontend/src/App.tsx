@@ -35,8 +35,19 @@ const API_BASE = import.meta.env.VITE_API_URL ||
 
 export function App() {
   const [channelName, setChannelName] = useState<string>("@AssabiqoonPublisher");
-  const [videos, setVideos] = useState<Video[]>([]);
-  const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([]);
+  const [videos, setVideos] = useLocalStorage<Video[]>("cached_videos", []);
+  const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>(() => {
+    try {
+      const cached = localStorage.getItem("cached_videos");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed.map((v: any) => v.id);
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [threshold, setThreshold] = useState<number>(80);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -72,7 +83,10 @@ export function App() {
   const fetchVideos = async (targetChannel: string) => {
     if (!targetChannel.trim()) return;
     
-    setLoading(true);
+    const hasCache = videos.length > 0;
+    if (!hasCache) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const response = await fetch(`${API_BASE}/api/channel-videos`, {
@@ -85,14 +99,23 @@ export function App() {
         throw new Error(data.error || "ไม่สามารถดึงข้อมูลวิดีโอได้");
       }
       const fetchedVideos = data.videos || [];
-      setVideos(fetchedVideos);
-      setSelectedVideoIds(fetchedVideos.map((v: Video) => v.id));
-      addToast(`โหลดรายการวิดีโอเรียบร้อยแล้ว (${fetchedVideos.length} คลิป)`, "success");
+      
+      const isDifferent = fetchedVideos.length !== videos.length ||
+        (fetchedVideos.length > 0 && videos.length > 0 && fetchedVideos[0].id !== videos[0].id);
+        
+      if (isDifferent || !hasCache) {
+        setVideos(fetchedVideos);
+        setSelectedVideoIds(fetchedVideos.map((v: Video) => v.id));
+        addToast(`อัปเดตรายการวิดีโอเรียบร้อยแล้ว (${fetchedVideos.length} คลิป)`, "success");
+      }
     } catch (err: any) {
-      setError(err.message || "เกิดข้อผิดพลาดในการโหลดวิดีโอ");
-      addToast("การโหลดวิดีโอล้มเหลว", "error");
+      if (!hasCache) {
+        setError(err.message || "เกิดข้อผิดพลาดในการโหลดวิดีโอ");
+      }
     } finally {
-      setLoading(false);
+      if (!hasCache) {
+        setLoading(false);
+      }
     }
   };
 

@@ -99,8 +99,23 @@ class YouTubeClient:
         # Check cache
         cache_key = f"channel_videos_{channel_name}_{limit}"
         cached_data = self.db_manager.get_document("channel_videos", cache_key)
-        if cached_data:
-            logger.info(f"Returning cached videos list for {channel_name}")
+        
+        if cached_data and self.api_key:
+            try:
+                # Do a quick check for the single latest video on YouTube
+                latest_yt = self._fetch_via_api(channel_name, limit=1)
+                if latest_yt and cached_data:
+                    latest_yt_id = latest_yt[0]["id"]
+                    latest_cached_id = cached_data[0]["id"]
+                    if latest_yt_id == latest_cached_id:
+                        logger.info(f"Cache is up-to-date for {channel_name}. Returning Firestore cache.")
+                        return cached_data
+                    logger.info(f"New video detected ({latest_yt_id} vs {latest_cached_id}). Refreshing cache...")
+            except Exception as e:
+                logger.warning(f"Error checking cache freshness: {str(e)}. Returning cache directly.")
+                return cached_data
+        elif cached_data:
+            logger.info(f"Returning cached videos list for {channel_name} (no API Key available for freshness check)")
             return cached_data
 
         videos = []
