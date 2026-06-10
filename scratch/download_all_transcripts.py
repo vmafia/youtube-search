@@ -13,6 +13,11 @@ from backend.utils.youtube import YouTubeClient
 from backend.config import Config
 
 def main():
+    if sys.platform == 'win32':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
     channel_name = "@AssabiqoonPublisher"
     args = [arg for arg in sys.argv[1:] if arg not in ("--yes", "-y")]
     if args:
