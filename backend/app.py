@@ -134,13 +134,10 @@ def search():
         
     results = []
     
-    # Process all selected video IDs using the cached transcripts in DB
-    video_ids_to_process = video_ids
-    
+    # 1. Search locally cached transcripts first
     for vid in video_ids_to_process:
         vid = sanitize_input(vid)
         try:
-            # Query ONLY cached transcripts in the DB to avoid Vercel timeouts and YouTube captcha blocks
             transcript = youtube_client.db_manager.get_document("transcripts", vid)
             if not transcript:
                 continue
@@ -155,6 +152,35 @@ def search():
             logger.warning(f"Skipping video {vid} during batch search: {str(e)}")
             continue
             
+    # 2. Fallback: If no results found, search YouTube Search API directly inside the channel
+    if not results:
+        channel_name = sanitize_input(data.get("channel_name", "@AssabiqoonPublisher"))
+        logger.info(f"Local cache search returned 0 results. Falling back to YouTube Search API for query: {query}")
+        matched_videos = youtube_client.search_youtube_api(channel_name, query)
+        
+        for m_vid in matched_videos:
+            vid_id = m_vid["id"]
+            # Attempt to fetch transcript for this matching video on-the-fly (since it's only 1-2 videos, it's very safe)
+            try:
+                transcript = youtube_client.fetch_video_transcript(vid_id)
+                matches = search_transcript(transcript, query, threshold=threshold)
+                results.append({
+                    "video_id": vid_id,
+                    "matches": matches,
+                    "title": m_vid["title"],
+                    "thumbnail": m_vid["thumbnail"]
+                })
+            except Exception as e:
+                logger.warning(f"Could not download transcript on-the-fly for fallback video {vid_id}: {str(e)}")
+                # Return video match without timestamps if transcript is blocked/rate-limited
+                results.append({
+                    "video_id": vid_id,
+                    "matches": [],
+                    "transcript_missing": True,
+                    "title": m_vid["title"],
+                    "thumbnail": m_vid["thumbnail"]
+                })
+                
     return jsonify({
         "query": query,
         "results": results

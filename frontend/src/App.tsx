@@ -142,6 +142,7 @@ export function App() {
           video_ids: selectedVideoIds,
           query: queryToUse.trim(),
           threshold: threshold,
+          channel_name: channelName.trim(),
         }),
       });
       const data = await response.json();
@@ -418,27 +419,33 @@ export function App() {
         
         {searchResults.map((result) => {
           const videoInfo = videos.find((v) => v.id === result.video_id);
+          const title = (result as any).title || (videoInfo ? videoInfo.title : result.video_id);
+          const thumbnail = (result as any).thumbnail || (videoInfo ? videoInfo.thumbnail : "");
+          const isTranscriptMissing = (result as any).transcript_missing;
+
           return (
             <div key={result.video_id} className="result-card">
               <div className="result-card-header">
-                {videoInfo && (
+                {thumbnail && (
                   <img
-                    src={videoInfo.thumbnail}
-                    alt={videoInfo.title}
+                    src={thumbnail}
+                    alt={title}
                     className="result-card-thumbnail"
                   />
                 )}
                 <div className="result-card-info">
                   <h3 className="result-card-title">
-                    {videoInfo ? videoInfo.title : result.video_id}
+                    {title}
                   </h3>
                   <div className="result-card-actions">
-                    <button
-                      className="result-card-btn"
-                      onClick={() => fetchFullTranscript(result.video_id)}
-                    >
-                      📖 ดูคำแปล/สคริปต์เต็ม
-                    </button>
+                    {!isTranscriptMissing && (
+                      <button
+                        className="result-card-btn"
+                        onClick={() => fetchFullTranscript(result.video_id)}
+                      >
+                        📖 ดูคำแปล/สคริปต์เต็ม
+                      </button>
+                    )}
                     <a
                       href={`https://youtu.be/${result.video_id}`}
                       target="_blank"
@@ -453,31 +460,40 @@ export function App() {
               </div>
 
               <div className="result-matches">
-                {result.matches.map((match, idx) => (
-                  <div key={idx} className="match-row">
-                    <a
-                      href={`https://youtu.be/${result.video_id}?t=${Math.floor(match.start)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="match-time"
-                    >
-                      ▶ {match.timestamp}
-                    </a>
-                    <div className="match-text-container">
-                      <p className="match-text">"{match.text}"</p>
-                      <div className="match-meta">
-                        <span className="badge">{match.match_type} ({match.score}%)</span>
-                        <span style={{ color: "var(--text-muted)" }}>•</span>
-                        <button
-                          className="copy-btn"
-                          onClick={() => handleCopyLink(result.video_id, match.start)}
-                        >
-                          คัดลอกลิงก์พร้อมแถมเวลา
-                        </button>
+                {isTranscriptMissing ? (
+                  <div style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--t3)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <span>⚠️ พบคำค้นหาในคลิปนี้บน YouTube (ดึงสคริปต์เวลารายนาทีไม่ได้ชั่วคราวเนื่องจาก YouTube rate limit)</span>
+                    <span style={{ fontSize: "0.8rem", color: "var(--t3)" }}>
+                      คุณสามารถคลิกปุ่ม "เปิดใน YouTube" ด้านบนเพื่อเปิดดูวิดีโอนี้โดยตรงได้เลยครับ
+                    </span>
+                  </div>
+                ) : (
+                  result.matches.map((match, idx) => (
+                    <div key={idx} className="match-row">
+                      <a
+                        href={`https://youtu.be/${result.video_id}?t=${Math.floor(match.start)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="match-time"
+                      >
+                        ▶ {match.timestamp}
+                      </a>
+                      <div className="match-text-container">
+                        <p className="match-text">"{match.text}"</p>
+                        <div className="match-meta">
+                          <span className="badge">{match.match_type} ({match.score}%)</span>
+                          <span style={{ color: "var(--text-muted)" }}>•</span>
+                          <button
+                            className="copy-btn"
+                            onClick={() => handleCopyLink(result.video_id, match.start)}
+                          >
+                            คัดลอกลิงก์พร้อมแถมเวลา
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           );
