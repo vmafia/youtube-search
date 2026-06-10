@@ -134,14 +134,17 @@ def search():
         
     results = []
     
-    # Simple rate-limiting/batching check: keep search processing bounded
-    # Limit search to max 100 videos at once to protect CPU
-    video_ids_to_process = video_ids[:100]
+    # Process all selected video IDs using the cached transcripts in DB
+    video_ids_to_process = video_ids
     
     for vid in video_ids_to_process:
         vid = sanitize_input(vid)
         try:
-            transcript = youtube_client.fetch_video_transcript(vid)
+            # Query ONLY cached transcripts in the DB to avoid Vercel timeouts and YouTube captcha blocks
+            transcript = youtube_client.db_manager.get_document("transcripts", vid)
+            if not transcript:
+                continue
+                
             matches = search_transcript(transcript, query, threshold=threshold)
             if matches:
                 results.append({
@@ -149,8 +152,6 @@ def search():
                     "matches": matches
                 })
         except Exception as e:
-            # We don't want one missing transcript to fail the entire batch search,
-            # but we log the warning.
             logger.warning(f"Skipping video {vid} during batch search: {str(e)}")
             continue
             
