@@ -88,7 +88,7 @@ class YouTubeClient:
         self.db_manager = DatabaseManager(cache_dir)
 
     @retry_with_backoff(retries=3, backoff_in_seconds=1.0)
-    def fetch_channel_videos(self, channel_name: str, limit: int = 100) -> List[Dict[str, Any]]:
+    def fetch_channel_videos(self, channel_name: str, limit: int = 5000) -> List[Dict[str, Any]]:
         """
         Fetches the latest videos of a channel name / handle.
         Attempts to resolve handle -> scrape/API -> fallback.

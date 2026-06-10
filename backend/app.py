@@ -98,7 +98,8 @@ def get_channel_videos():
         raise ValueError("channel_name parameter is required")
         
     try:
-        videos = youtube_client.fetch_channel_videos(channel_name)
+        limit = data.get("limit", 5000)
+        videos = youtube_client.fetch_channel_videos(channel_name, limit=limit)
         return jsonify({"videos": videos}), 200
     except Exception as e:
         logger.error(f"Error fetching channel videos for {channel_name}: {str(e)}")
