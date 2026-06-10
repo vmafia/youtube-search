@@ -407,7 +407,7 @@ class YouTubeClient:
                 "channelId": channel_id,
                 "q": query,
                 "type": "video",
-                "maxResults": 5,
+                "maxResults": 15,
                 "key": self.api_key
             }
             sr = requests.get(search_url, params=params)
