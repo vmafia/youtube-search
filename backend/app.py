@@ -87,7 +87,10 @@ def handle_global_error(error):
 @app.route("/api/health", methods=["GET"])
 @limiter.exempt  # Health check exempt from rate limiting
 def health():
-    return jsonify({"status": "healthy"}), 200
+    return jsonify({
+        "status": "healthy",
+        "database": "firebase" if youtube_client.db_manager.use_firebase else "local_cache"
+    }), 200
 
 @app.route("/api/channel-videos", methods=["POST"])
 def get_channel_videos():
