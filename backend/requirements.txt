@@ -11,4 +11,4 @@ firebase-admin==6.5.0
 pytest==8.2.2
 pytest-cov==5.0.0
 pytest-mock==3.14.0
-
+yt-dlp

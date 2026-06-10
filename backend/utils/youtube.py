@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import json
 import logging
@@ -270,7 +271,6 @@ class YouTubeClient:
             
         raise ValueError(f"Transcript unavailable for video {video_id}")
 
-    import sys
     def _parse_time(self, t_str):
         try:
             t_str = t_str.strip().replace(',', '.')

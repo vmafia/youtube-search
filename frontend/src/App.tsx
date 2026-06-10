@@ -232,7 +232,7 @@ export function App() {
       {/* Toast container */}
       <div className="toast-container">
         {toasts.map((toast) => (
-          <div key={toast.id} className="toast">
+          <div key={toast.id} className={`toast ${toast.type}`}>
             <span>{toast.message}</span>
           </div>
         ))}
