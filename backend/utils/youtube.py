@@ -265,3 +265,52 @@ class YouTubeClient:
             
         raise ValueError(f"Transcript unavailable for video {video_id}")
 
+    def search_youtube_api(self, channel_name: str, query: str) -> List[Dict[str, Any]]:
+        """
+        Searches YouTube search API specifically inside a channel.
+        Returns list of matching video details.
+        """
+        if not self.api_key:
+            return []
+            
+        try:
+            # 1. Resolve channel ID
+            handle = channel_name if channel_name.startswith("@") else f"@{channel_name}"
+            if "AssabiqoonPublisher" in handle:
+                channel_id = "UC0CawcehNJ-E_bvw3EQ2ARQ"
+            else:
+                url = f"https://www.googleapis.com/youtube/v3/channels?part=id&forHandle={handle}&key={self.api_key}"
+                r = requests.get(url)
+                r.raise_for_status()
+                data = r.json()
+                if not data.get("items"):
+                    return []
+                channel_id = data["items"][0]["id"]
+                
+            # 2. Search videos containing query in channel
+            search_url = "https://www.googleapis.com/youtube/v3/search"
+            params = {
+                "part": "snippet",
+                "channelId": channel_id,
+                "q": query,
+                "type": "video",
+                "maxResults": 5,
+                "key": self.api_key
+            }
+            sr = requests.get(search_url, params=params)
+            sr.raise_for_status()
+            sdata = sr.json()
+            
+            results = []
+            for item in sdata.get("items", []):
+                video_id = item["id"]["videoId"]
+                results.append({
+                    "id": video_id,
+                    "title": item["snippet"]["title"],
+                    "thumbnail": item["snippet"]["thumbnails"].get("medium", {}).get("url", f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg")
+                })
+            return results
+        except Exception as e:
+            logger.error(f"Error searching YouTube API for {query} in {channel_name}: {e}")
+            return []
+
