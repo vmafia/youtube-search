@@ -16,7 +16,7 @@ class DatabaseManager:
 
         # Attempt to initialize Firebase Admin SDK
         firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
-        project_id = os.environ.get("FIREBASE_PROJECT_ID", "transcript-search-b162c")
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "talib-club-web")
 
         if firebase_json:
             try:
