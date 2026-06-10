@@ -365,8 +365,11 @@ class YouTubeClient:
             
         cmd.append(video_url)
         
+        # On Vercel, keep a strict 5s limit. Locally, allow 30s to prevent timeouts on slower connections.
+        timeout_val = 5 if Config.IS_VERCEL else 30
+        
         try:
-            subprocess.run(cmd, check=True, capture_output=True, timeout=5)
+            subprocess.run(cmd, check=True, capture_output=True, timeout=timeout_val)
             pattern = os.path.join(temp_dir, f"{video_id}.*vtt")
             matches = glob.glob(pattern)
             if matches:
