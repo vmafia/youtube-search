@@ -342,29 +342,41 @@ export function App() {
                   value={videoSearchText}
                   onChange={(e) => setVideoSearchText(e.target.value)}
                 />
-                <div className="video-list-scroll">
+                <div className="video-grid-scroll">
                   {filteredVideosForSelection.length === 0 ? (
                     <div style={{ padding: "1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)" }}>
                       ไม่พบวิดีโอที่ตรงกัน
                     </div>
                   ) : (
-                    filteredVideosForSelection.map((video) => {
-                      const isSelected = selectedVideoIds.includes(video.id);
-                      return (
-                        <div
-                          key={video.id}
-                          className={`video-list-item ${isSelected ? "selected" : ""}`}
-                          onClick={() => toggleVideoSelection(video.id)}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => {}} // Toggle handled by row click
-                          />
-                          <span className="video-list-item-title">{video.title}</span>
-                        </div>
-                      );
-                    })
+                    <div className="video-grid">
+                      {filteredVideosForSelection.map((video) => {
+                        const isSelected = selectedVideoIds.includes(video.id);
+                        return (
+                          <div
+                            key={video.id}
+                            className={`video-card ${isSelected ? "selected" : ""}`}
+                            onClick={() => toggleVideoSelection(video.id)}
+                          >
+                            <div className="video-card-checkbox-wrapper">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}} // Toggle handled by row click
+                              />
+                            </div>
+                            <img
+                              src={video.thumbnail}
+                              alt={video.title}
+                              className="video-card-thumbnail"
+                            />
+                            <div className="video-card-info">
+                              <span className="video-card-title">{video.title}</span>
+                              <span className="video-card-date">{video.published_at}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
