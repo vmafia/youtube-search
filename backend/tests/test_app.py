@@ -75,7 +75,9 @@ def test_search_endpoint(mock_get_document, client):
     assert response.status_code == 200
     assert len(response.json["results"]) == 0
 
-def test_rate_limiting(client):
+@patch.object(youtube_client, 'fetch_channel_videos')
+def test_rate_limiting(mock_fetch, client):
+    mock_fetch.return_value = []
     # Flask-Limiter is enabled in the app. Let's send 35 requests rapidly to verify 429
     # (Note: depending on the test client state, it may trigger fast. Let's make sure we test if rate limit fires.)
     hit_limit = False

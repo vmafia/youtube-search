@@ -102,7 +102,16 @@ export function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel_name: targetChannel.trim() }),
       });
-      const data = await response.json();
+      
+      let data: any = {};
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(text || `HTTP error! Status: ${response.status}`);
+      }
+      
       if (!response.ok) {
         throw new Error(getErrorMessage(data.error, "ไม่สามารถดึงข้อมูลวิดีโอได้"));
       }
@@ -153,7 +162,16 @@ export function App() {
           channel_name: channelName.trim(),
         }),
       });
-      const data = await response.json();
+      
+      let data: any = {};
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(text || `HTTP error! Status: ${response.status}`);
+      }
+      
       if (!response.ok) {
         throw new Error(getErrorMessage(data.error, "เกิดข้อผิดพลาดในการค้นหา"));
       }
@@ -204,7 +222,16 @@ export function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ video_id: videoId }),
       });
-      const data = await response.json();
+      
+      let data: any = {};
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(text || `HTTP error! Status: ${response.status}`);
+      }
+      
       if (!response.ok) throw new Error(getErrorMessage(data.error, "ไม่สามารถดึง Transcript ได้"));
       
       const formatted = (data.transcript || []).map((t: any) => {

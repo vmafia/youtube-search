@@ -69,6 +69,9 @@ def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0):
     """Decorator for retrying API/Network calls with exponential backoff."""
     def decorator(func):
         def wrapper(*args, **kwargs):
+            if Config.IS_VERCEL:
+                # Disable retries on Vercel to avoid serverless function timeout (10s limit)
+                return func(*args, **kwargs)
             x = 0
             while True:
                 try:
@@ -162,14 +165,14 @@ class YouTubeClient:
         
         # 1. Resolve handle to Channel ID
         url = f"https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&forHandle={handle}&key={self.api_key}"
-        r = requests.get(url)
+        r = requests.get(url, timeout=5)
         r.raise_for_status()
         data = r.json()
         
         if not data.get("items"):
             # Try searching for channel if handle lookup fails
             search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={channel_name}&type=channel&key={self.api_key}"
-            r_search = requests.get(search_url)
+            r_search = requests.get(search_url, timeout=5)
             r_search.raise_for_status()
             search_data = r_search.json()
             if not search_data.get("items"):
@@ -177,7 +180,7 @@ class YouTubeClient:
             channel_id = search_data["items"][0]["id"]["channelId"]
             # Get content details for uploads playlist
             url = f"https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id={channel_id}&key={self.api_key}"
-            r = requests.get(url)
+            r = requests.get(url, timeout=5)
             data = r.json()
             
         channel_item = data["items"][0]
@@ -188,7 +191,7 @@ class YouTubeClient:
         next_page_token = ""
         while len(videos) < limit:
             playlist_url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId={uploads_playlist_id}&maxResults=50&pageToken={next_page_token}&key={self.api_key}"
-            pr = requests.get(playlist_url)
+            pr = requests.get(playlist_url, timeout=5)
             pr.raise_for_status()
             pdata = pr.json()
             
@@ -363,7 +366,7 @@ class YouTubeClient:
         cmd.append(video_url)
         
         try:
-            subprocess.run(cmd, check=True, capture_output=True)
+            subprocess.run(cmd, check=True, capture_output=True, timeout=5)
             pattern = os.path.join(temp_dir, f"{video_id}.*vtt")
             matches = glob.glob(pattern)
             if matches:
@@ -374,6 +377,8 @@ class YouTubeClient:
                 except Exception:
                     pass
                 return transcript
+        except subprocess.TimeoutExpired as e:
+            logger.warning(f"yt-dlp fallback download timed out for {video_id}: {e}")
         except Exception as e:
             logger.warning(f"yt-dlp fallback download failed for {video_id}: {e}")
         return None
@@ -393,7 +398,7 @@ class YouTubeClient:
                 channel_id = "UC0CawcehNJ-E_bvw3EQ2ARQ"
             else:
                 url = f"https://www.googleapis.com/youtube/v3/channels?part=id&forHandle={handle}&key={self.api_key}"
-                r = requests.get(url)
+                r = requests.get(url, timeout=5)
                 r.raise_for_status()
                 data = r.json()
                 if not data.get("items"):
@@ -410,7 +415,7 @@ class YouTubeClient:
                 "maxResults": 15,
                 "key": self.api_key
             }
-            sr = requests.get(search_url, params=params)
+            sr = requests.get(search_url, params=params, timeout=5)
             sr.raise_for_status()
             sdata = sr.json()
             
