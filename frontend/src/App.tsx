@@ -33,6 +33,14 @@ const API_BASE = import.meta.env.VITE_API_URL ||
     ? "http://localhost:5000"
     : "");
 
+const getErrorMessage = (error: any, fallback: string): string => {
+  if (!error) return fallback;
+  if (typeof error === "object") {
+    return error.message || error.error || JSON.stringify(error);
+  }
+  return String(error);
+};
+
 export function App() {
   const [channelName, setChannelName] = useState<string>("@AssabiqoonPublisher");
   const [videos, setVideos] = useLocalStorage<Video[]>("cached_videos", []);
@@ -96,7 +104,7 @@ export function App() {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "ไม่สามารถดึงข้อมูลวิดีโอได้");
+        throw new Error(getErrorMessage(data.error, "ไม่สามารถดึงข้อมูลวิดีโอได้"));
       }
       const fetchedVideos = data.videos || [];
       
@@ -147,7 +155,7 @@ export function App() {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "เกิดข้อผิดพลาดในการค้นหา");
+        throw new Error(getErrorMessage(data.error, "เกิดข้อผิดพลาดในการค้นหา"));
       }
       setSearchResults(data.results || []);
       
@@ -197,7 +205,7 @@ export function App() {
         body: JSON.stringify({ video_id: videoId }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "ไม่สามารถดึง Transcript ได้");
+      if (!response.ok) throw new Error(getErrorMessage(data.error, "ไม่สามารถดึง Transcript ได้"));
       
       const formatted = (data.transcript || []).map((t: any) => {
         const start = parseFloat(t.start) || 0;
