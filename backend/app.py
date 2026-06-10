@@ -164,6 +164,19 @@ def search():
         
         for m_vid in matched_videos:
             vid_id = m_vid["id"]
+            # Optimization: If on Vercel, do not attempt on-the-fly transcript downloading
+            # during search to prevent serverless function timeouts.
+            # Return video match directly; the user can load transcript on-demand if needed.
+            if Config.IS_VERCEL:
+                results.append({
+                    "video_id": vid_id,
+                    "matches": [],
+                    "transcript_missing": True,
+                    "title": m_vid["title"],
+                    "thumbnail": m_vid["thumbnail"]
+                })
+                continue
+                
             # Attempt to fetch transcript for this matching video on-the-fly (since it's only 1-2 videos, it's very safe)
             try:
                 transcript = youtube_client.fetch_video_transcript(vid_id)
