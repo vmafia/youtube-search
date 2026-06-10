@@ -13,42 +13,53 @@ logger = logging.getLogger(__name__)
 # Predefined metadata cache for @AssabiqoonPublisher to guarantee reliability
 ASSABIQOON_PLAYLIST_FALLBACK = [
     {
-        "id": "kYJvM9HnK0I",
-        "title": "เยาวชนกับแนวทางซะละฟีย์ - ดร.อามีน ลอนา",
-        "published_at": "2026-05-20T12:00:00Z",
-        "thumbnail": "https://img.youtube.com/vi/kYJvM9HnK0I/mqdefault.jpg"
+        "id": "WAN704dCy-g",
+        "title": "ฟิกฮ์อิบาดะฮ์ ตอนที่ 5 อธิบายประเภทของน้ำและสุขอนามัย",
+        "published_at": "Recently",
+        "thumbnail": "https://img.youtube.com/vi/WAN704dCy-g/mqdefault.jpg"
     },
     {
-        "id": "R956M81-79w",
-        "title": "3 คำถามในหลุมศพ - ดร.อามีน ลอนา",
-        "published_at": "2026-05-15T12:00:00Z",
-        "thumbnail": "https://img.youtube.com/vi/R956M81-79w/mqdefault.jpg"
+        "id": "M2j7tx0Pju8",
+        "title": "ดุอาอ์และซิกิร ตอนที่ 17 พันธะสัญญาของผู้ศรัทธา",
+        "published_at": "Recently",
+        "thumbnail": "https://img.youtube.com/vi/M2j7tx0Pju8/mqdefault.jpg"
     },
     {
-        "id": "dQw4w9WgXcQ",
-        "title": "บทเรียนคุณธรรมและหนทางสู่ความเข้าใจศาสนา",
-        "published_at": "2026-05-10T12:00:00Z",
-        "thumbnail": "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg"
+        "id": "JsQHC_2I4gw",
+        "title": "เสวนา อัซซาบิกูน ครั้งที่ 1 - ปูพื้นฐานความศรัทธา",
+        "published_at": "Recently",
+        "thumbnail": "https://img.youtube.com/vi/JsQHC_2I4gw/mqdefault.jpg"
     }
 ]
 
 # Simple mock transcripts for @AssabiqoonPublisher fallback to ensure tests and offline mode work
 ASSABIQOON_TRANSCRIPT_FALLBACK = {
-    "kYJvM9HnK0I": [
-        {"text": "อัสสลามุอะลัยกุม วะเราะห์มะตุลลอฮิ วะบะรอกาตุฮ์", "start": 0.0, "duration": 4.5},
-        {"text": "ขอความสันติจงมีแด่พี่น้องผู้ศรัทธาทุกท่าน", "start": 5.0, "duration": 5.0},
-        {"text": "แท้จริงการยึดมั่นในแนวทางของท่านนบีมูฮัมหมัด", "start": 10.5, "duration": 6.0},
-        {"text": "คือทางรอดเดียวของเราในโลกนี้และโลกหน้า", "start": 17.0, "duration": 5.5},
-        {"text": "today we talk about holding fast to the straight path", "start": 23.0, "duration": 5.0}
+    "WAN704dCy-g": [
+        {"text": "บิสมิลลาฮิรเราะห์มานิรเราะฮีม อัสสลามุอะลัยกุม วะเราะห์มะตุลลอฮิ วะบะรอกาตุฮ์", "start": 0.0, "duration": 5.0},
+        {"text": "ยินดีต้อนรับสู่บทเรียนฟิกฮ์อิบาดะฮ์ในวันนี้", "start": 6.0, "duration": 4.0},
+        {"text": "หัวข้อสำคัญที่เราจะพูดถึงคือสุขอนามัยและการทำความสะอาด", "start": 10.5, "duration": 5.5},
+        {"text": "น้ำประเภทแรกคือน้ำสะอาดบริสุทธิ์ หรือที่เราเรียกว่า น้ำมุฏลัก", "start": 17.0, "duration": 6.0},
+        {"text": "น้ำนี้สามารถนำมาใช้อาบน้ำละหมาดและชำระล้างสิ่งสกปรกได้", "start": 23.5, "duration": 5.0},
+        {"text": "water is a fundamental part of physical and spiritual cleanliness in Islam", "start": 29.0, "duration": 6.5},
+        {"text": "สุขอนามัยที่ดีเป็นส่วนหนึ่งของความศรัทธาที่มุสลิมทุกคนต้องรักษา", "start": 36.0, "duration": 5.5}
     ],
-    "R956M81-79w": [
-        {"text": "บิสมิลลาฮิรเราะห์มานิรเราะฮีม", "start": 0.0, "duration": 3.0},
-        {"text": "วันนี้เราจะมาเริ่มการอธิบายซูเราะห์อัลบะเกาะเราะฮ์", "start": 3.5, "duration": 5.0},
-        {"text": "อายะฮ์ที่หนึ่ง อะลิฟ ลาม มีม", "start": 9.0, "duration": 4.5},
-        {"text": "นี่คือคัมภีร์ที่ไม่มีข้อเคลือบแคลงสงสัยใดๆ ในนั้น", "start": 14.0, "duration": 6.0}
+    "M2j7tx0Pju8": [
+        {"text": "การวิงวอนขอดุอาอ์ต่ออัลลอฮ์ตะอาลาคือหัวใจสำคัญของการศรัทธา", "start": 0.0, "duration": 5.5},
+        {"text": "เมื่อเราขอดุอาอ์อย่างนอบน้อม พระองค์จะทรงตอบรับคำขอของเรา", "start": 6.0, "duration": 5.0},
+        {"text": "พันธะสัญญาของผู้ศรัทธาคือการยึดมั่นในศีลธรรมและสัจจะ", "start": 12.0, "duration": 5.5},
+        {"text": "today we discuss the covenant of a true believer in times of ease and hardship", "start": 18.0, "duration": 6.5},
+        {"text": "การซิกิรหรือการรำลึกถึงอัลลอฮ์จะทำให้จิตใจของเราสงบและมีพลัง", "start": 25.5, "duration": 5.5},
+        {"text": "ขอพระองค์ทรงชี้นำพวกเราให้อยู่บนแนวทางที่ถูกต้องเสมอ", "start": 32.0, "duration": 5.0}
+    ],
+    "JsQHC_2I4gw": [
+        {"text": "ยินดีต้อนรับสู่เสวนาอัซซาบิกูน ครั้งที่หนึ่ง", "start": 0.0, "duration": 4.0},
+        {"text": "วันนี้เราจะมาพูดคุยเพื่อร่วมกันปูพื้นฐานความศรัทธาที่ถูกต้อง", "start": 4.5, "duration": 6.0},
+        {"text": "แนวทางสะลัฟคือแนวทางที่พวกเรายึดถือในการตีความศาสนาอิสลาม", "start": 11.0, "duration": 5.5},
+        {"text": "building a solid foundation of faith is key to resisting doubts", "start": 17.0, "duration": 5.5},
+        {"text": "สำนักพิมพ์อัซซาบิกูนมุ่งมั่นเผยแพร่ความรู้อันเที่ยงตรงนี้แก่สังคม", "start": 23.5, "duration": 6.0},
+        {"text": "ขอขอบคุณวิทยากรทุกท่านและผู้ฟังทุกคนที่มาร่วมเสวนาในวันนี้", "start": 30.0, "duration": 5.5}
     ]
 }
-
 
 def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0):
     """Decorator for retrying API/Network calls with exponential backoff."""
