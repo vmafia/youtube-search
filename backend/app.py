@@ -89,7 +89,9 @@ def handle_global_error(error):
 def health():
     return jsonify({
         "status": "healthy",
-        "database": "firebase" if youtube_client.db_manager.use_firebase else "local_cache"
+        "database": "firebase" if youtube_client.db_manager.use_firebase else "local_cache",
+        "firebase_env_present": os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON") is not None,
+        "firebase_init_error": youtube_client.db_manager.init_error
     }), 200
 
 @app.route("/api/channel-videos", methods=["POST"])

@@ -13,6 +13,7 @@ class DatabaseManager:
         self.cache_dir = cache_dir
         self.db = None
         self.use_firebase = False
+        self.init_error = None
 
         # Attempt to initialize Firebase Admin SDK
         firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
@@ -35,8 +36,10 @@ class DatabaseManager:
                 self.use_firebase = True
                 logger.info("Successfully initialized Firebase Firestore")
             except Exception as e:
+                self.init_error = str(e)
                 logger.error(f"Failed to initialize Firebase with service account JSON: {str(e)}")
         else:
+            self.init_error = "FIREBASE_SERVICE_ACCOUNT_JSON env var is missing"
             logger.warning("FIREBASE_SERVICE_ACCOUNT_JSON is not defined. Falling back to local file caching.")
 
     def _get_local_path(self, collection: str, key: str) -> str:
