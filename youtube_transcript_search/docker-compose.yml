@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=prod-secret-key-compose-98765
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+    volumes:
+      - ./backend/cache:/app/backend/cache
+      - ./backend/logs:/app/backend/logs
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        - VITE_API_URL=http://localhost:5000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: always
