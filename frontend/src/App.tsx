@@ -14,7 +14,7 @@ interface Match {
   end: number;
   timestamp: string;
   score: number;
-  match_type: "exact" | "partial" | "fuzzy";
+  match_type: "exact" | "partial" | "fuzzy" | "estimated";
 }
 
 interface SearchResult {
@@ -516,14 +516,28 @@ export function App() {
                       <div className="match-text-container">
                         <p className="match-text">"{match.text}"</p>
                         <div className="match-meta">
-                          <span className="badge">{match.match_type} ({match.score}%)</span>
+                          <span className={`badge ${match.match_type}`}>
+                            {match.match_type === "exact" && "ตรงเป๊ะ"}
+                            {match.match_type === "partial" && "ตรงบางส่วน"}
+                            {match.match_type === "fuzzy" && "ใกล้เคียง"}
+                            {match.match_type === "estimated" && "คาดการณ์ตำแหน่ง"}
+                            {match.match_type !== "exact" && match.match_type !== "partial" && match.match_type !== "fuzzy" && match.match_type !== "estimated" && match.match_type}
+                            {" "}
+                            ({Math.round(match.score)}%)
+                          </span>
                           <span style={{ color: "var(--text-muted)" }}>•</span>
-                          <button
-                            className="copy-btn"
-                            onClick={() => handleCopyLink(result.video_id, match.start)}
-                          >
-                            คัดลอกลิงก์พร้อมแถมเวลา
-                          </button>
+                          {match.match_type !== "estimated" ? (
+                            <button
+                              className="copy-btn"
+                              onClick={() => handleCopyLink(result.video_id, match.start)}
+                            >
+                              คัดลอกลิงก์พร้อมแถมเวลา
+                            </button>
+                          ) : (
+                            <span style={{ color: "var(--t3)", fontSize: "0.75rem" }}>
+                              (กรุณากดเปิดเพื่อฟัง/ดูตำแหน่งจริง)
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

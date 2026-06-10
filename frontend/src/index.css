@@ -498,6 +498,36 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   color: var(--t3);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 0.5px solid var(--br2);
+  display: inline-flex;
+  align-items: center;
+}
+
+.badge.exact {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.badge.partial {
+  background: rgba(69, 214, 182, 0.1);
+  color: var(--teal);
+  border-color: rgba(69, 214, 182, 0.2);
+}
+
+.badge.fuzzy {
+  background: rgba(241, 223, 184, 0.1);
+  color: var(--acc);
+  border-color: rgba(241, 223, 184, 0.2);
+}
+
+.badge.estimated {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.2);
 }
 
 .copy-btn {
