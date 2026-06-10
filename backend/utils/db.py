@@ -40,7 +40,6 @@ class DatabaseManager:
             logger.warning("FIREBASE_SERVICE_ACCOUNT_JSON is not defined. Falling back to local file caching.")
 
     def _get_local_path(self, collection: str, key: str) -> str:
-        os.makedirs(os.path.join(self.cache_dir, collection), exist_ok=True)
         # Sanitise key for filesystem
         clean_key = "".join([c if c.isalnum() else "_" for c in key])
         return os.path.join(self.cache_dir, collection, f"{clean_key}.json")
@@ -81,6 +80,7 @@ class DatabaseManager:
         # Always write to local cache as fallback/duplicate
         local_path = self._get_local_path(collection, doc_id)
         try:
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
             with open(local_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
                 logger.info(f"Saved {doc_id} to local cache ({collection})")

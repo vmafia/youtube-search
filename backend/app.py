@@ -135,22 +135,26 @@ def search():
     results = []
     
     # 1. Search locally cached transcripts first
-    for vid in video_ids:
-        vid = sanitize_input(vid)
-        try:
-            transcript = youtube_client.db_manager.get_document("transcripts", vid)
-            if not transcript:
+    # Optimization: On Vercel, if Firebase is not enabled, the local cache (/tmp/cache) is empty.
+    # We skip checking 3,000+ files to avoid serverless function timeouts.
+    skip_cache = Config.IS_VERCEL and not youtube_client.db_manager.use_firebase
+    if not skip_cache:
+        for vid in video_ids:
+            vid = sanitize_input(vid)
+            try:
+                transcript = youtube_client.db_manager.get_document("transcripts", vid)
+                if not transcript:
+                    continue
+                    
+                matches = search_transcript(transcript, query, threshold=threshold)
+                if matches:
+                    results.append({
+                        "video_id": vid,
+                        "matches": matches
+                    })
+            except Exception as e:
+                logger.warning(f"Skipping video {vid} during batch search: {str(e)}")
                 continue
-                
-            matches = search_transcript(transcript, query, threshold=threshold)
-            if matches:
-                results.append({
-                    "video_id": vid,
-                    "matches": matches
-                })
-        except Exception as e:
-            logger.warning(f"Skipping video {vid} during batch search: {str(e)}")
-            continue
             
     # 2. Fallback: If no results found, search YouTube Search API directly inside the channel
     if not results:
