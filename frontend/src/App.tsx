@@ -58,6 +58,7 @@ export function App() {
   });
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [threshold, setThreshold] = useState<number>(80);
+  const [localThreshold, setLocalThreshold] = useState<number>(80);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   
   const [searchHistory, setSearchHistory] = useLocalStorage<string[]>("search_history", []);
@@ -79,6 +80,21 @@ export function App() {
   useEffect(() => {
     fetchVideos(channelName);
   }, []);
+
+  // Debounce threshold updates to prevent lag during slider movement
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setThreshold(localThreshold);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [localThreshold]);
+
+  // Auto-refresh search when threshold updates
+  useEffect(() => {
+    if (searchQuery.trim() && searchResults.length > 0) {
+      handleSearch(undefined, searchQuery);
+    }
+  }, [threshold]);
 
   const addToast = (message: string, type: "success" | "error" = "success") => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -370,14 +386,14 @@ export function App() {
               <div style={{ marginBottom: "1.25rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: "0.35rem" }}>
                   <span>ระดับความคล้ายคลึงของคำ (Fuzzy Match Threshold)</span>
-                  <span>{threshold}%</span>
+                  <span>{localThreshold}%</span>
                 </div>
                 <input
                   type="range"
                   min="60"
                   max="100"
-                  value={threshold}
-                  onChange={(e) => setThreshold(parseInt(e.target.value))}
+                  value={localThreshold}
+                  onChange={(e) => setLocalThreshold(parseInt(e.target.value))}
                   style={{ width: "100%", accentColor: "var(--text-primary)" }}
                 />
               </div>

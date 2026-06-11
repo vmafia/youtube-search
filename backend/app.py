@@ -9,7 +9,7 @@ import html
 
 from backend.config import Config
 from backend.utils.youtube import YouTubeClient
-from backend.utils.search import search_transcript
+from backend.utils.search import search_transcript, check_and_convert_milliseconds
 
 # Setup Logger
 logger = logging.getLogger()
@@ -119,6 +119,7 @@ def get_video_transcript():
         
     try:
         transcript = youtube_client.fetch_video_transcript(video_id)
+        transcript = check_and_convert_milliseconds(transcript)
         return jsonify({"video_id": video_id, "transcript": transcript}), 200
     except Exception as e:
         logger.error(f"Error fetching transcript for video {video_id}: {str(e)}")
