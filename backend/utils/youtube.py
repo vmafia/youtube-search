@@ -233,6 +233,63 @@ class YouTubeClient:
             })
         return videos
 
+    def _fetch_via_public_api(self, video_id: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetches transcript from the free public API: youtube-transcript.ai
+        """
+        url = f"https://youtube-transcript.ai/transcript/{video_id}.txt"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        try:
+            logger.info(f"Attempting to fetch from youtube-transcript.ai for {video_id}...")
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                content = r.text
+                lines = content.strip().split('\n')
+                transcript_started = False
+                segments = []
+                
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line == "## Transcript":
+                        transcript_started = True
+                        continue
+                    if not transcript_started:
+                        continue
+                    
+                    match = re.match(r"^\[(?:(\d+):)?(\d+):(\d+)\]\s*(.*)$", line)
+                    if match:
+                        h_str = match.group(1)
+                        m_str = match.group(2)
+                        s_str = match.group(3)
+                        text = match.group(4).strip()
+                        
+                        h = int(h_str) if h_str else 0
+                        m = int(m_str)
+                        s = int(s_str)
+                        start_time = h * 3600 + m * 60 + s
+                        
+                        segments.append({
+                            "text": text,
+                            "start": float(start_time),
+                            "duration": 5.0
+                        })
+                
+                if segments:
+                    # Adjust durations based on next segment's start time
+                    for i in range(len(segments) - 1):
+                        segments[i]["duration"] = max(0.5, segments[i+1]["start"] - segments[i]["start"])
+                    logger.info(f"Successfully retrieved and parsed {len(segments)} segments from youtube-transcript.ai for {video_id}")
+                    return segments
+            else:
+                logger.warning(f"youtube-transcript.ai returned status code {r.status_code} for {video_id}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch from youtube-transcript.ai for {video_id}: {e}")
+        return None
+
     @retry_with_backoff(retries=2, backoff_in_seconds=1.0)
     def fetch_video_transcript(self, video_id: str) -> List[Dict[str, Any]]:
         """
@@ -245,7 +302,11 @@ class YouTubeClient:
             logger.info(f"Returning cached transcript for video {video_id}")
             return cached_data
 
+        transcript = None
+
+        # 1. Try standard API
         try:
+<<<<<<< Updated upstream
             # Try to fetch transcript with 'th' or 'en'
             fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
             transcript = [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in fetched]
@@ -259,8 +320,23 @@ class YouTubeClient:
             except Exception as inner_e:
                 logger.warning(f"Fallback transcript fetching failed for {video_id}: {str(inner_e)}. Trying yt-dlp fallback...")
                 transcript = self._download_subs_yt_dlp(video_id)
+=======
+            fetched = YouTubeTranscriptApi().fetch(video_id, languages=["th", "en"])
+            transcript = [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
+>>>>>>> Stashed changes
         except Exception as e:
-            logger.warning(f"Error fetching transcript via standard API for {video_id}: {str(e)}. Trying yt-dlp fallback...")
+            logger.warning(f"Standard API fetch failed for {video_id}: {str(e)}")
+
+        # 2. Try youtube-transcript.ai public API
+        if not transcript:
+            try:
+                transcript = self._fetch_via_public_api(video_id)
+            except Exception as e:
+                logger.warning(f"Public API fallback failed for {video_id}: {str(e)}")
+
+        # 3. Try yt-dlp fallback
+        if not transcript:
+            logger.warning(f"Trying yt-dlp fallback for {video_id}...")
             try:
                 transcript = self._download_subs_yt_dlp(video_id)
             except Exception as dlp_err:
@@ -271,8 +347,6 @@ class YouTubeClient:
             if video_id in ASSABIQOON_TRANSCRIPT_FALLBACK:
                 logger.info(f"Using mock transcript fallback for {video_id}")
                 transcript = ASSABIQOON_TRANSCRIPT_FALLBACK[video_id]
-            else:
-                raise ValueError(f"Transcript unavailable for video {video_id}")
 
         if transcript:
             self.db_manager.set_document("transcripts", video_id, transcript)
