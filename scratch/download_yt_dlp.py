@@ -17,6 +17,19 @@ sys.path.append(base_dir)
 
 load_dotenv(os.path.join(base_dir, ".env"))
 
+# Check if Drive D exists, else fallback to base_dir
+if os.path.exists("D:\\"):
+    d_drive_temp = "D:\\youtube_search_temp"
+    d_drive_hf = "D:\\huggingface_cache"
+else:
+    d_drive_temp = os.path.join(base_dir, "scratch", "temp_subs")
+    d_drive_hf = os.path.join(base_dir, "scratch", "huggingface_cache")
+
+# Redirect Hugging Face cache to D Drive to save space on C Drive
+os.environ["HF_HOME"] = d_drive_hf
+os.makedirs(d_drive_temp, exist_ok=True)
+os.makedirs(d_drive_hf, exist_ok=True)
+
 from backend.utils.youtube import YouTubeClient
 
 def parse_time(t_str):
@@ -90,7 +103,7 @@ def parse_vtt(file_path):
         return None
 
 def download_subs_yt_dlp(video_id):
-    temp_dir = os.path.join(base_dir, "scratch", "temp_subs")
+    temp_dir = d_drive_temp
     os.makedirs(temp_dir, exist_ok=True)
     
     # Define output template for yt-dlp
@@ -106,6 +119,7 @@ def download_subs_yt_dlp(video_id):
         "--sub-langs", "th",
         "--sub-format", "vtt",
         "--js-runtimes", "node",
+        "--extractor-args", "youtube:player_client=web",
         "--quiet",
         "-o", output_tmpl
     ]
@@ -139,6 +153,96 @@ def download_subs_yt_dlp(video_id):
     except Exception as e:
         logger.debug(f"yt-dlp command failed for {video_id}: {e}")
         
+    return None
+
+# Global whisper model cache
+_whisper_model = None
+
+def get_whisper_model():
+    global _whisper_model
+    if _whisper_model is None:
+        logger.info("Initializing faster-whisper model ('base'). This will download the model weights on first run...")
+        import torch
+        from faster_whisper import WhisperModel
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        try:
+            if device == "cuda":
+                # float16 is faster and uses less memory on Nvidia GPU
+                _whisper_model = WhisperModel("base", device="cuda", compute_type="float16")
+                logger.info("Whisper model loaded successfully on Nvidia CUDA GPU")
+            else:
+                _whisper_model = WhisperModel("base", device="cpu", compute_type="float32")
+                logger.info("Whisper model loaded successfully on CPU")
+        except Exception as e:
+            logger.warning(f"Failed to load Whisper on GPU: {e}. Falling back to CPU.")
+            _whisper_model = WhisperModel("base", device="cpu", compute_type="float32")
+            logger.info("Whisper model loaded successfully on CPU")
+    return _whisper_model
+
+def download_audio_and_transcribe(video_id):
+    temp_dir = d_drive_temp
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    audio_path_tmpl = os.path.join(temp_dir, f"{video_id}.%(ext)s")
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+    
+    # yt-dlp command to download audio as m4a
+    cmd = [
+        sys.executable, "-m", "yt_dlp",
+        "-f", "ba[ext=m4a]/ba",
+        "-x", "--audio-format", "m4a",
+        "--js-runtimes", "node",
+        "--extractor-args", "youtube:player_client=web",
+        "--quiet",
+        "-o", audio_path_tmpl
+    ]
+    
+    cookies_path = os.path.join(base_dir, "cookies.txt")
+    if os.path.exists(cookies_path):
+        cmd.extend(["--cookies", cookies_path])
+        
+    cmd.append(video_url)
+    
+    logger.info(f"Downloading audio for Whisper fallback: {video_id}...")
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        
+        audio_file = os.path.join(temp_dir, f"{video_id}.m4a")
+        if not os.path.exists(audio_file):
+            matches = glob.glob(os.path.join(temp_dir, f"{video_id}.*"))
+            if matches:
+                audio_file = matches[0]
+            else:
+                logger.error(f"Failed to find downloaded audio file for {video_id}")
+                return None
+                
+        model = get_whisper_model()
+        logger.info(f"Transcribing audio locally using Whisper for: {video_id}...")
+        segments, info = model.transcribe(audio_file, beam_size=5, language="th")
+        
+        transcript = []
+        for segment in segments:
+            transcript.append({
+                "text": segment.text.strip(),
+                "start": round(segment.start, 2),
+                "duration": round(segment.end - segment.start, 2)
+            })
+            
+        try:
+            os.remove(audio_file)
+        except Exception:
+            pass
+            
+        logger.info(f"-> Whisper successfully generated transcript for {video_id} ({len(transcript)} lines)")
+        return transcript
+        
+    except Exception as e:
+        logger.error(f"Local Whisper transcription failed for {video_id}: {e}")
+        for f in glob.glob(os.path.join(temp_dir, f"{video_id}.*")):
+            try:
+                os.remove(f)
+            except Exception:
+                pass
     return None
 
 def main():
@@ -189,6 +293,10 @@ def main():
         # 3. Fetch transcript from YouTube
         transcript = download_subs_yt_dlp(video_id)
         
+        # 4. Fallback to Whisper if subtitles are unavailable on YouTube
+        if not transcript:
+            transcript = download_audio_and_transcribe(video_id)
+        
         if transcript:
             try:
                 client.db_manager.set_document("transcripts", video_id, transcript)
@@ -197,7 +305,7 @@ def main():
             except Exception as e:
                 logger.error(f"-> Failed to write transcript to DB: {e}")
         else:
-            logger.warning(f"-> Subtitles unavailable/could not download for {video_id}")
+            logger.warning(f"-> Transcripts completely unavailable/failed for {video_id}")
             failed_count += 1
             
         # Mild pause to be polite and avoid rate limits

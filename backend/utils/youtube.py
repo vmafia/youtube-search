@@ -352,6 +352,8 @@ class YouTubeClient:
             "--sub-langs", "th",
             "--sub-format", "vtt",
             "--ignore-no-formats-error",
+            "--js-runtimes", "node",
+            "--extractor-args", "youtube:player_client=web",
             "--quiet",
             "-o", output_tmpl
         ]
