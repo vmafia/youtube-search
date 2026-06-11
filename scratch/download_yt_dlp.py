@@ -124,8 +124,10 @@ def download_subs_yt_dlp(video_id):
         "-o", output_tmpl
     ]
     
-    # Use cookies.txt if available to bypass 429 blocks
-    cookies_path = os.path.join(base_dir, "cookies.txt")
+    # Use cookies if available to bypass 429 blocks
+    cookies_path = os.path.join(base_dir, "cookies_new.txt")
+    if not os.path.exists(cookies_path):
+        cookies_path = os.path.join(base_dir, "cookies.txt")
     if os.path.exists(cookies_path):
         cmd.extend(["--cookies", cookies_path])
         
@@ -154,6 +156,22 @@ def download_subs_yt_dlp(video_id):
         logger.debug(f"yt-dlp command failed for {video_id}: {e}")
         
     return None
+
+def download_subs_api(video_id):
+    cookies_path = os.path.join(base_dir, "cookies_new.txt")
+    if not os.path.exists(cookies_path):
+        cookies_path = os.path.join(base_dir, "cookies.txt")
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        if os.path.exists(cookies_path):
+            fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"], cookies=cookies_path)
+        else:
+            fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
+        return [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in fetched]
+    except Exception as e:
+        logger.debug(f"YouTubeTranscriptApi failed for {video_id}: {e}")
+    return None
+
 
 # Global whisper model cache
 _whisper_model = None
@@ -197,7 +215,9 @@ def download_audio_and_transcribe(video_id):
         "-o", audio_path_tmpl
     ]
     
-    cookies_path = os.path.join(base_dir, "cookies.txt")
+    cookies_path = os.path.join(base_dir, "cookies_new.txt")
+    if not os.path.exists(cookies_path):
+        cookies_path = os.path.join(base_dir, "cookies.txt")
     if os.path.exists(cookies_path):
         cmd.extend(["--cookies", cookies_path])
         
@@ -288,10 +308,12 @@ def main():
         except Exception as e:
             logger.warning(f"Error checking Firestore for {video_id}: {e}")
             
-        logger.info(f"[{i+1}/{len(videos)}] Fetching transcript via yt-dlp for: {video_id} - {title[:40]}...")
+        logger.info(f"[{i+1}/{len(videos)}] Fetching transcript for: {video_id} - {title[:40]}...")
         
-        # 3. Fetch transcript from YouTube
-        transcript = download_subs_yt_dlp(video_id)
+        # 3. Fetch transcript from YouTube (Try standard API first, then yt-dlp fallback)
+        transcript = download_subs_api(video_id)
+        if not transcript:
+            transcript = download_subs_yt_dlp(video_id)
         
         # 4. Fallback to Whisper if subtitles are unavailable on YouTube
         if not transcript:

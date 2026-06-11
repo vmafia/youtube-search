@@ -6,6 +6,8 @@ backend/firebase-credentials.json
 *.log
 cookies.txt
 cookies.txt.txt
+cookies_new.txt
+
 
 # Python
 **/__pycache__/

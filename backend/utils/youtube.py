@@ -247,15 +247,15 @@ class YouTubeClient:
 
         try:
             # Try to fetch transcript with 'th' or 'en'
-            fetched = YouTubeTranscriptApi().fetch(video_id, languages=["th", "en"])
-            transcript = [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
+            fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
+            transcript = [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in fetched]
         except (TranscriptsDisabled, NoTranscriptFound) as e:
             logger.warning(f"No direct th/en transcripts found for {video_id}, trying fallback: {str(e)}")
             try:
                 # Try fetching list and getting first available
-                transcript_list = YouTubeTranscriptApi().list(video_id)
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
                 fetched = transcript_list.find_transcript(["th", "en"]).fetch()
-                transcript = [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
+                transcript = [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in fetched]
             except Exception as inner_e:
                 logger.warning(f"Fallback transcript fetching failed for {video_id}: {str(inner_e)}. Trying yt-dlp fallback...")
                 transcript = self._download_subs_yt_dlp(video_id)
@@ -358,12 +358,15 @@ class YouTubeClient:
             "-o", output_tmpl
         ]
         
-        # Check if cookies.txt is in project root directory
+        # Check if cookies_new.txt or cookies.txt is in project root directory
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        cookies_path = os.path.join(base_dir, "cookies.txt")
+        cookies_path = os.path.join(base_dir, "cookies_new.txt")
+        if not os.path.exists(cookies_path):
+            cookies_path = os.path.join(base_dir, "cookies.txt")
+            
         if os.path.exists(cookies_path):
             cmd.extend(["--cookies", cookies_path])
-            logger.info(f"Using cookies.txt from {cookies_path} in yt-dlp fallback")
+            logger.info(f"Using cookies from {cookies_path} in yt-dlp fallback")
             
         cmd.append(video_url)
         
