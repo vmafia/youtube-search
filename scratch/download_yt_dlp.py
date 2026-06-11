@@ -188,12 +188,12 @@ def get_whisper_model():
             _whisper_beam_size = 5
             logger.info("Whisper model loaded successfully on Nvidia CUDA GPU")
         except Exception as e:
-            logger.warning(f"Failed to load Whisper on GPU: {e}. Falling back to CPU with 'tiny' model.")
+            logger.warning(f"Failed to load Whisper on GPU: {e}. Falling back to CPU with 'small' model.")
             try:
-                # Use tiny model on CPU for 10x speedup and set thread limits to avoid OpenMP contention
-                _whisper_model = WhisperModel("tiny", device="cpu", compute_type="float32", cpu_threads=1)
-                _whisper_beam_size = 1
-                logger.info("Whisper 'tiny' model loaded successfully on CPU (threads=1)")
+                # Use small model on CPU with more threads for better accuracy on Thai
+                _whisper_model = WhisperModel("small", device="cpu", compute_type="int8", cpu_threads=4)
+                _whisper_beam_size = 3
+                logger.info("Whisper 'small' model loaded successfully on CPU (threads=4, int8)")
             except Exception as cpu_err:
                 logger.error(f"Failed to load Whisper on CPU as well: {cpu_err}")
                 raise cpu_err
@@ -239,15 +239,24 @@ def download_audio_and_transcribe(video_id):
                 
         model = get_whisper_model()
         logger.info(f"Transcribing audio locally using Whisper for: {video_id}...")
-        segments, info = model.transcribe(audio_file, beam_size=_whisper_beam_size, language="th")
+        segments, info = model.transcribe(
+            audio_file,
+            beam_size=_whisper_beam_size,
+            language="th",
+            vad_filter=True,       # skip silent parts → faster
+            condition_on_previous_text=False  # avoid hallucination loop
+        )
+        logger.info(f"Processing audio with duration {info.duration:.1f}s | detected lang: {info.language} ({info.language_probability:.0%})")
         
         transcript = []
         for segment in segments:
-            transcript.append({
-                "text": segment.text.strip(),
-                "start": round(segment.start, 2),
-                "duration": round(segment.end - segment.start, 2)
-            })
+            text = segment.text.strip()
+            if text:  # skip empty segments
+                transcript.append({
+                    "text": text,
+                    "start": round(segment.start, 2),
+                    "duration": round(segment.end - segment.start, 2)
+                })
             
         try:
             os.remove(audio_file)
