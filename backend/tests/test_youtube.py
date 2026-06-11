@@ -79,19 +79,17 @@ def test_fetch_via_scraping(mock_get_channel, tmp_path):
     assert videos[0]["id"] == "vid456"
     assert videos[0]["title"] == "Scraped Video"
 
-@patch('backend.utils.youtube.YouTubeTranscriptApi.fetch')
-def test_fetch_video_transcript_live(mock_fetch, tmp_path):
+@patch('backend.utils.youtube.YouTubeTranscriptApi.get_transcript')
+def test_fetch_video_transcript_live(mock_get_transcript, tmp_path):
     client = YouTubeClient(cache_dir=str(tmp_path))
     
-    mock_snippet = MagicMock()
-    mock_snippet.text = "Hello"
-    mock_snippet.start = 0.0
-    mock_snippet.duration = 1.0
-    
-    mock_fetch.return_value = [mock_snippet]
+    mock_get_transcript.return_value = [
+        {"text": "Hello", "start": 0.0, "duration": 1.0}
+    ]
     
     res = client.fetch_video_transcript("live_vid")
     assert len(res) == 1
     assert res[0]["text"] == "Hello"
     assert res[0]["start"] == 0.0
     assert res[0]["duration"] == 1.0
+

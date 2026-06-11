@@ -175,21 +175,25 @@ def download_subs_api(video_id):
 
 # Global whisper model cache
 _whisper_model = None
+_whisper_beam_size = 5
 
 def get_whisper_model():
-    global _whisper_model
+    global _whisper_model, _whisper_beam_size
     if _whisper_model is None:
-        logger.info("Initializing faster-whisper model ('base'). This will download the model weights on first run...")
         from faster_whisper import WhisperModel
         try:
             # Attempt CUDA loading
+            logger.info("Initializing faster-whisper model ('base') on GPU...")
             _whisper_model = WhisperModel("base", device="cuda", compute_type="float16")
+            _whisper_beam_size = 5
             logger.info("Whisper model loaded successfully on Nvidia CUDA GPU")
         except Exception as e:
-            logger.warning(f"Failed to load Whisper on GPU: {e}. Falling back to CPU.")
+            logger.warning(f"Failed to load Whisper on GPU: {e}. Falling back to CPU with 'tiny' model.")
             try:
-                _whisper_model = WhisperModel("base", device="cpu", compute_type="float32")
-                logger.info("Whisper model loaded successfully on CPU")
+                # Use tiny model on CPU for 10x speedup and set thread limits to avoid OpenMP contention
+                _whisper_model = WhisperModel("tiny", device="cpu", compute_type="float32", cpu_threads=1)
+                _whisper_beam_size = 1
+                logger.info("Whisper 'tiny' model loaded successfully on CPU (threads=1)")
             except Exception as cpu_err:
                 logger.error(f"Failed to load Whisper on CPU as well: {cpu_err}")
                 raise cpu_err
@@ -235,7 +239,7 @@ def download_audio_and_transcribe(video_id):
                 
         model = get_whisper_model()
         logger.info(f"Transcribing audio locally using Whisper for: {video_id}...")
-        segments, info = model.transcribe(audio_file, beam_size=5, language="th")
+        segments, info = model.transcribe(audio_file, beam_size=_whisper_beam_size, language="th")
         
         transcript = []
         for segment in segments:
