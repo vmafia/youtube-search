@@ -9,7 +9,7 @@ import html
 
 from backend.config import Config
 from backend.utils.youtube import YouTubeClient
-from backend.utils.search import search_transcript, check_and_convert_milliseconds
+from backend.utils.search import search_transcript, check_and_convert_milliseconds, expand_query
 
 # Setup Logger
 logger = logging.getLogger()
@@ -137,6 +137,11 @@ def search():
     if not video_ids or not isinstance(video_ids, list):
         raise ValueError("video_ids parameter is required and must be a list")
         
+    # Expand query using local synonyms + Gemini AI (if available)
+    gemini_key = Config.GEMINI_API_KEY
+    expanded_queries = expand_query(query, api_key=gemini_key)
+    logger.info(f"Search request: '{query}'. Expanded queries: {expanded_queries}")
+
     results = []
     
     # Hybrid search strategy to prevent timeouts:
@@ -156,7 +161,7 @@ def search():
                 if not transcript:
                     continue
                     
-                matches = search_transcript(transcript, query, threshold=threshold)
+                matches = search_transcript(transcript, expanded_queries, threshold=threshold)
                 if matches:
                     results.append({
                         "video_id": vid,
@@ -188,7 +193,7 @@ def search():
                         pass
                 
                 if transcript:
-                    matches = search_transcript(transcript, query, threshold=threshold)
+                    matches = search_transcript(transcript, expanded_queries, threshold=threshold)
                     if matches:
                         results.append({
                             "video_id": vid_id,
@@ -212,6 +217,7 @@ def search():
                 
     return jsonify({
         "query": query,
+        "expanded_queries": expanded_queries,
         "results": results
     }), 200
 

@@ -119,7 +119,7 @@ def download_subs_yt_dlp(video_id):
         "--sub-langs", "th",
         "--sub-format", "vtt",
         "--js-runtimes", "node",
-        "--extractor-args", "youtube:player_client=web",
+        "--remote-components", "ejs:github",
         "--quiet",
         "-o", output_tmpl
     ]
@@ -192,7 +192,7 @@ def download_audio_and_transcribe(video_id):
         "-f", "ba[ext=m4a]/ba",
         "-x", "--audio-format", "m4a",
         "--js-runtimes", "node",
-        "--extractor-args", "youtube:player_client=web",
+        "--remote-components", "ejs:github",
         "--quiet",
         "-o", audio_path_tmpl
     ]

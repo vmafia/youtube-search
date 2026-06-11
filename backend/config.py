@@ -9,6 +9,7 @@ class Config:
     
     # YouTube API
     YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     
     # Cache and limits
     IS_VERCEL = os.environ.get("VERCEL") == "1"

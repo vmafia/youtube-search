@@ -353,7 +353,7 @@ class YouTubeClient:
             "--sub-format", "vtt",
             "--ignore-no-formats-error",
             "--js-runtimes", "node",
-            "--extractor-args", "youtube:player_client=web",
+            "--remote-components", "ejs:github",
             "--quiet",
             "-o", output_tmpl
         ]
