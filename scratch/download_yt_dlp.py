@@ -180,21 +180,19 @@ def get_whisper_model():
     global _whisper_model
     if _whisper_model is None:
         logger.info("Initializing faster-whisper model ('base'). This will download the model weights on first run...")
-        import torch
         from faster_whisper import WhisperModel
-        device = "cuda" if torch.cuda.is_available() else "cpu"
         try:
-            if device == "cuda":
-                # float16 is faster and uses less memory on Nvidia GPU
-                _whisper_model = WhisperModel("base", device="cuda", compute_type="float16")
-                logger.info("Whisper model loaded successfully on Nvidia CUDA GPU")
-            else:
-                _whisper_model = WhisperModel("base", device="cpu", compute_type="float32")
-                logger.info("Whisper model loaded successfully on CPU")
+            # Attempt CUDA loading
+            _whisper_model = WhisperModel("base", device="cuda", compute_type="float16")
+            logger.info("Whisper model loaded successfully on Nvidia CUDA GPU")
         except Exception as e:
             logger.warning(f"Failed to load Whisper on GPU: {e}. Falling back to CPU.")
-            _whisper_model = WhisperModel("base", device="cpu", compute_type="float32")
-            logger.info("Whisper model loaded successfully on CPU")
+            try:
+                _whisper_model = WhisperModel("base", device="cpu", compute_type="float32")
+                logger.info("Whisper model loaded successfully on CPU")
+            except Exception as cpu_err:
+                logger.error(f"Failed to load Whisper on CPU as well: {cpu_err}")
+                raise cpu_err
     return _whisper_model
 
 def download_audio_and_transcribe(video_id):
@@ -208,7 +206,6 @@ def download_audio_and_transcribe(video_id):
     cmd = [
         sys.executable, "-m", "yt_dlp",
         "-f", "ba[ext=m4a]/ba",
-        "-x", "--audio-format", "m4a",
         "--js-runtimes", "node",
         "--remote-components", "ejs:github",
         "--quiet",
