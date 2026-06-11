@@ -306,24 +306,19 @@ class YouTubeClient:
 
         # 1. Try standard API
         try:
-<<<<<<< Updated upstream
-            # Try to fetch transcript with 'th' or 'en'
-            fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
-            transcript = [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in fetched]
+            # Try to fetch transcript with 'th' or 'en' using new instance-style API
+            fetched = YouTubeTranscriptApi().fetch(video_id, languages=["th", "en"])
+            transcript = [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
         except (TranscriptsDisabled, NoTranscriptFound) as e:
             logger.warning(f"No direct th/en transcripts found for {video_id}, trying fallback: {str(e)}")
             try:
                 # Try fetching list and getting first available
                 transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
                 fetched = transcript_list.find_transcript(["th", "en"]).fetch()
-                transcript = [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in fetched]
+                transcript = [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
             except Exception as inner_e:
                 logger.warning(f"Fallback transcript fetching failed for {video_id}: {str(inner_e)}. Trying yt-dlp fallback...")
                 transcript = self._download_subs_yt_dlp(video_id)
-=======
-            fetched = YouTubeTranscriptApi().fetch(video_id, languages=["th", "en"])
-            transcript = [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
->>>>>>> Stashed changes
         except Exception as e:
             logger.warning(f"Standard API fetch failed for {video_id}: {str(e)}")
 

@@ -93,6 +93,76 @@ def health():
         "firebase_init_error": youtube_client.db_manager.init_error
     }), 200
 
+@app.route("/api/transcription-stats", methods=["GET"])
+def get_transcription_stats():
+    import json
+    try:
+        db = youtube_client.db_manager.db
+        if not youtube_client.db_manager.use_firebase or not db:
+            cache_path = os.path.join(youtube_client.db_manager.cache_dir, "transcripts")
+            transcribed_ids = []
+            no_sub_count = 0
+            if os.path.exists(cache_path):
+                for f_name in os.listdir(cache_path):
+                    if f_name.endswith(".json"):
+                        vid = f_name[:-5]
+                        try:
+                            with open(os.path.join(cache_path, f_name), "r", encoding="utf-8") as f_in:
+                                file_data = json.load(f_in)
+                                if isinstance(file_data, dict) and file_data.get("no_subtitle") is True:
+                                    no_sub_count += 1
+                                else:
+                                    transcribed_ids.append(vid)
+                        except Exception:
+                            pass
+            return jsonify({
+                "transcribed_count": len(transcribed_ids),
+                "no_subtitle_count": no_sub_count,
+                "transcribed_ids": transcribed_ids
+            }), 200
+
+        # Firestore fast count queries
+        total_transcripts = db.collection("transcripts").count().get()[0][0].value
+        no_subtitle_count = db.collection("transcripts").where("no_subtitle", "==", True).count().get()[0][0].value
+        transcribed_count = total_transcripts - no_subtitle_count
+        
+        # Get transcribed IDs stream (extremely lightweight document projection)
+        docs = db.collection("transcripts").select(["no_subtitle"]).stream()
+        transcribed_ids = [doc.id for doc in docs if not doc.to_dict().get("no_subtitle")]
+        
+        return jsonify({
+            "transcribed_count": transcribed_count,
+            "no_subtitle_count": no_subtitle_count,
+            "transcribed_ids": transcribed_ids
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching transcription stats: {str(e)}")
+        raise e
+
+@app.route("/api/transcription-status", methods=["GET"])
+def get_transcription_status():
+    status_path = os.path.join(app.config["CACHE_DIR"], "transcription_status.json")
+    if os.path.exists(status_path):
+        try:
+            with open(status_path, "r", encoding="utf-8") as f:
+                import json
+                data = json.load(f)
+            return jsonify(data), 200
+        except Exception as e:
+            return jsonify({"error": f"Failed to read status file: {str(e)}"}), 500
+    else:
+        return jsonify({
+            "status": "idle",
+            "current_index": 0,
+            "total_to_process": 0,
+            "current_video_id": "",
+            "current_video_title": "",
+            "progress_state": "not_started",
+            "success_count": 0,
+            "fail_count": 0,
+            "last_updated": 0
+        }), 200
+
 @app.route("/api/channel-videos", methods=["POST"])
 def get_channel_videos():
     data = request.get_json() or {}
