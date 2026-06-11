@@ -517,9 +517,9 @@ export function App() {
               <div className="result-matches">
                 {isTranscriptMissing ? (
                   <div style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--t3)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                    <span>⚠️ พบคำค้นหาในคลิปนี้บน YouTube (ดึงสคริปต์เวลารายนาทีไม่ได้ชั่วคราวเนื่องจาก YouTube rate limit)</span>
+                    <span>🔍 YouTube พบว่าวิดีโอนี้น่าจะเกี่ยวข้อง แต่ยังไม่มีสคริปต์ในฐานข้อมูลของเรา</span>
                     <span style={{ fontSize: "0.8rem", color: "var(--t3)" }}>
-                      คุณสามารถคลิกปุ่ม "เปิดใน YouTube" ด้านบนเพื่อเปิดดูวิดีโอนี้โดยตรงได้เลยครับ
+                      คลิก "เปิดใน YouTube" เพื่อดูวิดีโอโดยตรง หรือรอสักครู่ในขณะที่เรากำลังเพิ่มสคริปต์ให้ครบ
                     </span>
                   </div>
                 ) : (

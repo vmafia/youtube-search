@@ -120,6 +120,7 @@ def download_subs_yt_dlp(video_id):
         "--sub-format", "vtt",
         "--js-runtimes", "node",
         "--remote-components", "ejs:github",
+        "--socket-timeout", "15",
         "--quiet",
         "-o", output_tmpl
     ]
@@ -287,6 +288,15 @@ def main():
     channel_name = "@AssabiqoonPublisher"
     limit = 5000
     
+    # Modes:
+    #   (default)  Phase 1 - fast: API + yt-dlp only, mark no-subtitle videos
+    #   --whisper  Phase 2 - slow: Whisper for videos marked as no_subtitle
+    use_whisper = "--whisper" in sys.argv
+    if use_whisper:
+        logger.info("=== PHASE 2: Whisper mode — transcribing no-subtitle videos ===")
+    else:
+        logger.info("=== PHASE 1: Fast mode — API + yt-dlp subtitles only ===")
+    
     # 1. Retrieve the list of channel videos from Firestore
     cache_key = f"channel_videos_{channel_name}_{limit}"
     videos_doc = db.collection("channel_videos").document(cache_key).get()
@@ -300,56 +310,78 @@ def main():
     
     success_count = 0
     skipped_count = 0
-    failed_count = 0
+    no_sub_count = 0
     
-    # Batch process transcripts using yt-dlp
     for i, video in enumerate(videos):
         video_id = video["id"]
         title = video["title"]
         
-        # 2. Check if transcript is already cached in Firestore
+        # Check Firestore for existing transcript or no_subtitle marker
         try:
             doc_ref = db.collection("transcripts").document(video_id).get()
             if doc_ref.exists:
-                skipped_count += 1
-                if skipped_count % 100 == 0 or skipped_count == 1:
-                    logger.info(f"Progress: [{i+1}/{len(videos)}] - Already cached: {video_id} (Total skipped: {skipped_count})")
-                continue
+                doc_data = doc_ref.to_dict()
+                is_no_sub_marker = isinstance(doc_data, dict) and doc_data.get("no_subtitle") is True
+                
+                if use_whisper and is_no_sub_marker:
+                    # Phase 2: this is a marked no-subtitle video, process with Whisper
+                    pass
+                elif not use_whisper and is_no_sub_marker:
+                    # Phase 1: already marked as no-subtitle, skip
+                    skipped_count += 1
+                    continue
+                else:
+                    # Has real transcript, skip
+                    skipped_count += 1
+                    if skipped_count % 200 == 0:
+                        logger.info(f"[{i+1}/{len(videos)}] Progress: {success_count} new, {skipped_count} skipped, {no_sub_count} no-sub")
+                    continue
         except Exception as e:
             logger.warning(f"Error checking Firestore for {video_id}: {e}")
-            
-        logger.info(f"[{i+1}/{len(videos)}] Fetching transcript for: {video_id} - {title[:40]}...")
         
-        # 3. Fetch transcript from YouTube (Try standard API first, then yt-dlp fallback)
-        transcript = download_subs_api(video_id)
-        if not transcript:
-            transcript = download_subs_yt_dlp(video_id)
+        transcript = None
         
-        # 4. Fallback to Whisper if subtitles are unavailable on YouTube
-        if not transcript:
+        if use_whisper:
+            # Phase 2: Whisper transcription (download audio + transcribe)
+            logger.info(f"[{i+1}/{len(videos)}] Whisper transcribing: {video_id} — {title[:35]}")
             transcript = download_audio_and_transcribe(video_id)
+        else:
+            # Phase 1: API only — fastest possible (~0.5s per video)
+            # Skip yt-dlp here (needs EJS solve = ~8s per video = 7+ hours for 3268 videos)
+            # yt-dlp is used in Phase 2 only, where we download audio anyway
+            transcript = download_subs_api(video_id)
         
         if transcript:
             try:
                 client.db_manager.set_document("transcripts", video_id, transcript)
                 success_count += 1
-                logger.info(f"-> Successfully cached transcript for {video_id} ({len(transcript)} lines)")
+                logger.info(f"[{i+1}/{len(videos)}] ✓ Cached {video_id} ({len(transcript)} lines) — {title[:35]}")
             except Exception as e:
-                logger.error(f"-> Failed to write transcript to DB: {e}")
+                logger.error(f"-> Failed to write to DB for {video_id}: {e}")
         else:
-            logger.warning(f"-> Transcripts completely unavailable/failed for {video_id}")
-            failed_count += 1
-            
-        # Mild pause to be polite and avoid rate limits
-        import random
-        time.sleep(random.uniform(2.0, 4.0))
+            no_sub_count += 1
+            if not use_whisper:
+                # Mark as no_subtitle so Phase 2 Whisper knows to process it
+                try:
+                    db.collection("transcripts").document(video_id).set({"no_subtitle": True, "title": title})
+                except Exception as e:
+                    logger.warning(f"Failed to write no_subtitle marker for {video_id}: {e}")
+            if no_sub_count % 100 == 0 or no_sub_count <= 3:
+                logger.info(f"[{i+1}/{len(videos)}] No subtitle ({no_sub_count} total): {video_id} — {title[:35]}")
         
-    logger.info("========================================")
-    logger.info("yt-dlp Transcript downloading completed!")
-    logger.info(f"Total processed: {len(videos)}")
-    logger.info(f"Successfully cached: {success_count}")
-    logger.info(f"Skipped (already cached): {skipped_count}")
-    logger.info(f"Failed / Unavailable: {failed_count}")
+        # Short pause between requests
+        time.sleep(0.5)
+        
+    logger.info("=" * 50)
+    logger.info(f"Phase {'2 (Whisper)' if use_whisper else '1 (Fast)'} completed!")
+    logger.info(f"Total videos in channel: {len(videos)}")
+    logger.info(f"Successfully transcribed: {success_count}")
+    logger.info(f"Skipped (already done): {skipped_count}")
+    if use_whisper:
+        logger.info(f"Whisper failed: {no_sub_count}")
+    else:
+        logger.info(f"Marked for Whisper (Phase 2): {no_sub_count}")
+        logger.info(f"Run with --whisper flag to process remaining {no_sub_count} videos")
 
 if __name__ == "__main__":
     main()
