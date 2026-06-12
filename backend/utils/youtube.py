@@ -306,14 +306,31 @@ class YouTubeClient:
 
         # 1. Try standard API
         try:
+            # Check for cookies to bypass YouTube IP blocks
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            cookies_path = os.path.join(base_dir, "cookies_new.txt")
+            if not os.path.exists(cookies_path):
+                cookies_path = os.path.join(base_dir, "cookies.txt")
+                
+            if os.path.exists(cookies_path):
+                import http.cookiejar
+                session = requests.Session()
+                cj = http.cookiejar.MozillaCookieJar(cookies_path)
+                cj.load(ignore_discard=True, ignore_expires=True)
+                session.cookies = cj
+                api = YouTubeTranscriptApi(http_client=session)
+                logger.info(f"Using cookies from {cookies_path} in YouTubeTranscriptApi")
+            else:
+                api = YouTubeTranscriptApi()
+                
             # Try to fetch transcript with 'th' or 'en' using new instance-style API
-            fetched = YouTubeTranscriptApi().fetch(video_id, languages=["th", "en"])
+            fetched = api.fetch(video_id, languages=["th", "en"])
             transcript = [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
         except (TranscriptsDisabled, NoTranscriptFound) as e:
             logger.warning(f"No direct th/en transcripts found for {video_id}, trying fallback: {str(e)}")
             try:
                 # Try fetching list and getting first available
-                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                transcript_list = api.list(video_id)
                 fetched = transcript_list.find_transcript(["th", "en"]).fetch()
                 transcript = [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
             except Exception as inner_e:

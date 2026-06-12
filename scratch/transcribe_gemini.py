@@ -74,7 +74,70 @@ def update_status(index, total, video_id, video_title, progress_state, success_c
     except Exception as e:
         logger.error(f"Failed to write status file: {e}")
 
-def transcribe_with_gemini(audio_path, video_id, video_title="", idx=0, total=0, success_count=0, fail_count=0, retries=5, initial_backoff=10):
+def find_ffmpeg_path():
+    # 1. Try static-ffmpeg package
+    try:
+        from static_ffmpeg import run
+        ffmpeg_exe, _ = run.get_or_fetch_platform_executables_else_raise()
+        if os.path.exists(ffmpeg_exe):
+            return ffmpeg_exe
+    except Exception:
+        pass
+
+    # 2. Try system PATH
+    import shutil
+    path_in_env = shutil.which("ffmpeg")
+    if path_in_env:
+        return path_in_env
+        
+    user_profile = os.environ.get("USERPROFILE", "C:\\Users\\HP")
+    winget_link = os.path.join(user_profile, "AppData", "Local", "Microsoft", "WinGet", "Links", "ffmpeg.exe")
+    if os.path.exists(winget_link):
+        return winget_link
+        
+    packages_dir = os.path.join(user_profile, "AppData", "Local", "Microsoft", "WinGet", "Packages")
+    if os.path.exists(packages_dir):
+        for root, dirs, files in os.walk(packages_dir):
+            if "ffmpeg.exe" in files:
+                return os.path.join(root, "ffmpeg.exe")
+                
+    return "ffmpeg"
+
+def split_audio(audio_path, segment_time_seconds=900):
+    """Splits an audio file into chunks of segment_time_seconds using ffmpeg."""
+    temp_dir = os.path.dirname(audio_path)
+    base_name = os.path.splitext(os.path.basename(audio_path))[0]
+    output_pattern = os.path.join(temp_dir, f"{base_name}_chunk_%03d.m4a")
+    
+    ffmpeg_exe = find_ffmpeg_path()
+    
+    cmd = [
+        ffmpeg_exe, "-y",
+        "-i", audio_path,
+        "-f", "segment",
+        "-segment_time", str(segment_time_seconds),
+        "-c", "copy",
+        output_pattern
+    ]
+    
+    logger.info(f"Splitting audio {audio_path} into {segment_time_seconds}s segments using {ffmpeg_exe}...")
+    try:
+        # Check if ffmpeg works
+        res = subprocess.run([ffmpeg_exe, "-version"], capture_output=True)
+        if res.returncode != 0:
+            logger.warning("FFmpeg executable failed version check. Skipping split.")
+            return [audio_path]
+            
+        subprocess.run(cmd, check=True, capture_output=True)
+        pattern = os.path.join(temp_dir, f"{base_name}_chunk_*.m4a")
+        chunks = sorted(glob.glob(pattern))
+        logger.info(f"Split completed. Created {len(chunks)} audio chunks.")
+        return chunks
+    except Exception as e:
+        logger.error(f"FFmpeg split failed: {e}. Transcribing as single file.")
+        return [audio_path]
+
+def transcribe_with_gemini(audio_path, video_id, video_title="", idx=0, total=0, success_count=0, fail_count=0, progress_state=None, retries=5, initial_backoff=10):
     """Uploads audio to Gemini File API and transcribes it with retry logic."""
     gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("YOUTUBE_API_KEY")
     if not gemini_key:
@@ -87,7 +150,7 @@ def transcribe_with_gemini(audio_path, video_id, video_title="", idx=0, total=0,
     uploaded_file = None
     try:
         logger.info(f"Uploading {audio_path} to Gemini File API...")
-        update_status(idx, total, video_id, video_title, "uploading_gemini", success_count, fail_count)
+        update_status(idx, total, video_id, video_title, progress_state or "uploading_gemini", success_count, fail_count)
         uploaded_file = client.files.upload(file=audio_path)
         logger.info(f"Uploaded successfully. File name in API: {uploaded_file.name}")
         
@@ -97,7 +160,7 @@ def transcribe_with_gemini(audio_path, video_id, video_title="", idx=0, total=0,
             if time.time() - wait_start > 300: # 5 min timeout
                 raise TimeoutError("Gemini File API processing timed out.")
             logger.info("Waiting for Gemini API to finish processing audio file...")
-            update_status(idx, total, video_id, video_title, "processing_gemini", success_count, fail_count)
+            update_status(idx, total, video_id, video_title, progress_state or "processing_gemini", success_count, fail_count)
             time.sleep(5)
             uploaded_file = client.files.get(name=uploaded_file.name)
             
@@ -105,7 +168,7 @@ def transcribe_with_gemini(audio_path, video_id, video_title="", idx=0, total=0,
             raise ValueError(f"Gemini File API failed to process the file.")
             
         logger.info(f"File is ready (state: {uploaded_file.state.name}). Generating transcript...")
-        update_status(idx, total, video_id, video_title, "generating_transcript", success_count, fail_count)
+        update_status(idx, total, video_id, video_title, progress_state or "generating_transcript", success_count, fail_count)
         
         # Generate content with exponential backoff for 503/429 errors
         for attempt in range(1, retries + 1):
@@ -293,22 +356,53 @@ def main():
                 update_status(idx, len(to_process), vid, title, "download_failed", success_count, fail_count)
                 continue
                 
-            # 2. Transcribe using Gemini API
-            transcript = transcribe_with_gemini(
-                audio_file, vid, video_title=title, idx=idx, total=len(to_process), 
-                success_count=success_count, fail_count=fail_count
-            )
+            # 2. Split audio into chunks (lossless and extremely fast with FFmpeg)
+            chunks = split_audio(audio_file, segment_time_seconds=900)
             
-            # Clean up local file immediately
+            full_transcript = []
+            chunk_success = True
+            
+            for c_idx, chunk_path in enumerate(chunks):
+                # Calculate time offset for segment timestamp shifting
+                time_offset = c_idx * 900
+                
+                logger.info(f"[{idx}/{len(to_process)}] Transcribing chunk {c_idx+1}/{len(chunks)} of {vid}...")
+                progress_state = f"generating_transcript (chunk {c_idx+1}/{len(chunks)})"
+                update_status(idx, len(to_process), vid, title, progress_state, success_count, fail_count)
+                
+                # Transcribe the chunk
+                chunk_transcript = transcribe_with_gemini(
+                    chunk_path, vid, video_title=title, idx=idx, total=len(to_process),
+                    success_count=success_count, fail_count=fail_count,
+                    progress_state=progress_state
+                )
+                
+                # Clean up chunk file immediately
+                try:
+                    os.remove(chunk_path)
+                except Exception:
+                    pass
+                    
+                if chunk_transcript:
+                    # Shift timestamps for the chunk segments
+                    for segment in chunk_transcript:
+                        segment["start"] += time_offset
+                    full_transcript.extend(chunk_transcript)
+                else:
+                    logger.error(f"Failed to transcribe chunk {c_idx+1} for {vid}")
+                    chunk_success = False
+                    break
+            
+            # Clean up original file
             try:
                 os.remove(audio_file)
             except Exception:
                 pass
                 
-            if transcript:
+            if chunk_success and full_transcript:
                 try:
                     # Save to database (replaces no_subtitle marker)
-                    client.db_manager.set_document("transcripts", vid, transcript)
+                    client.db_manager.set_document("transcripts", vid, full_transcript)
                     success_count += 1
                     logger.info(f"[{idx}/{len(to_process)}] ✓ Successfully saved transcript for {vid}")
                     update_status(idx, len(to_process), vid, title, "success", success_count, fail_count)
@@ -317,6 +411,14 @@ def main():
                     fail_count += 1
                     update_status(idx, len(to_process), vid, title, "save_failed", success_count, fail_count)
             else:
+                # Clean up any remaining chunks in case of failure
+                for c_idx in range(len(chunks)):
+                    chunk_path = os.path.join(os.path.dirname(audio_file), f"{os.path.splitext(os.path.basename(audio_file))[0]}_chunk_{c_idx:03d}.m4a")
+                    try:
+                        if os.path.exists(chunk_path):
+                            os.remove(chunk_path)
+                    except Exception:
+                        pass
                 fail_count += 1
                 logger.warning(f"[{idx}/{len(to_process)}] ✗ Transcription failed for {vid}")
                 update_status(idx, len(to_process), vid, title, "transcription_failed", success_count, fail_count)

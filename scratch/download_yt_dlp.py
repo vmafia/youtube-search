@@ -170,11 +170,19 @@ def download_subs_api(video_id):
         cookies_path = os.path.join(base_dir, "cookies.txt")
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
+        import requests
         if os.path.exists(cookies_path):
-            fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"], cookies=cookies_path)
+            import http.cookiejar
+            session = requests.Session()
+            cj = http.cookiejar.MozillaCookieJar(cookies_path)
+            cj.load(ignore_discard=True, ignore_expires=True)
+            session.cookies = cj
+            api = YouTubeTranscriptApi(http_client=session)
         else:
-            fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
-        return [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in fetched]
+            api = YouTubeTranscriptApi()
+            
+        fetched = api.fetch(video_id, languages=["th", "en"])
+        return [{"text": s.text, "start": s.start, "duration": s.duration} for s in fetched]
     except Exception as e:
         logger.debug(f"YouTubeTranscriptApi failed for {video_id}: {e}")
     return None
