@@ -29,3 +29,5 @@ frontend/.vite/
 # OS files
 .DS_Store
 Thumbs.db
+
+bulk_index_progress.json
