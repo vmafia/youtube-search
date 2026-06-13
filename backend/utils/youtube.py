@@ -237,47 +237,102 @@ class YouTubeClient:
     def fetch_video_transcript(self, video_id: str) -> List[Dict[str, Any]]:
         """
         Fetches the transcript for a specific video ID.
-        Tries Thai first, then English, then any available.
-        Caches results locally/Firestore.
+        Strategy (in order):
+          1. Return from cache if available.
+          2. Try Thai/English direct fetch.
+          3. List all available transcripts → try auto-generated th/en.
+          4. Try manually created th/en.
+          5. Take the first available transcript in any language.
+          6. Fall back to yt-dlp subtitle download.
+          7. Use hardcoded fallback for known videos.
         """
         cached_data = self.db_manager.get_document("transcripts", video_id)
         if cached_data:
             logger.info(f"Returning cached transcript for video {video_id}")
             return cached_data
 
-        try:
-            # Try to fetch transcript with 'th' or 'en'
-            fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
-            transcript = [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in fetched]
-        except (TranscriptsDisabled, NoTranscriptFound) as e:
-            logger.warning(f"No direct th/en transcripts found for {video_id}, trying fallback: {str(e)}")
-            try:
-                # Try fetching list and getting first available
-                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-                fetched = transcript_list.find_transcript(["th", "en"]).fetch()
-                transcript = [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in fetched]
-            except Exception as inner_e:
-                logger.warning(f"Fallback transcript fetching failed for {video_id}: {str(inner_e)}. Trying yt-dlp fallback...")
-                transcript = self._download_subs_yt_dlp(video_id)
-        except Exception as e:
-            logger.warning(f"Error fetching transcript via standard API for {video_id}: {str(e)}. Trying yt-dlp fallback...")
-            try:
-                transcript = self._download_subs_yt_dlp(video_id)
-            except Exception as dlp_err:
-                logger.error(f"yt-dlp fallback failed: {dlp_err}")
+        transcript = None
 
-        # Final mock data fallback if all else fails
+        def _parse_fetched(fetched) -> List[Dict[str, Any]]:
+            """Convert YouTubeTranscriptApi result to standard dict list."""
+            return [
+                {"text": s["text"], "start": s["start"], "duration": s["duration"]}
+                for s in fetched
+            ]
+
+        # --- Strategy 1: Direct fetch (th then en) ---
+        try:
+            fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
+            transcript = _parse_fetched(fetched)
+            logger.info(f"Got th/en transcript for {video_id} (direct)")
+        except (TranscriptsDisabled, NoTranscriptFound) as e:
+            logger.warning(f"No direct th/en transcript for {video_id}: {e}")
+        except Exception as e:
+            logger.warning(f"Error on direct transcript fetch for {video_id}: {e}")
+
+        # --- Strategies 2–5: Explore all available transcripts ---
+        if not transcript:
+            try:
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+
+                # Strategy 2: Auto-generated Thai (a.th) or English (a.en)
+                if not transcript:
+                    try:
+                        t = transcript_list.find_generated_transcript(["th", "en", "th-TH", "a.th", "a.en"])
+                        transcript = _parse_fetched(t.fetch())
+                        logger.info(f"Got auto-generated transcript for {video_id} (lang={t.language_code})")
+                    except Exception:
+                        pass
+
+                # Strategy 3: Manually created in any preferred language
+                if not transcript:
+                    try:
+                        t = transcript_list.find_manually_created_transcript(["th", "en", "th-TH"])
+                        transcript = _parse_fetched(t.fetch())
+                        logger.info(f"Got manual transcript for {video_id} (lang={t.language_code})")
+                    except Exception:
+                        pass
+
+                # Strategy 4: Any available transcript (first one found)
+                if not transcript:
+                    try:
+                        for t in transcript_list:
+                            try:
+                                transcript = _parse_fetched(t.fetch())
+                                logger.info(f"Got transcript for {video_id} (fallback lang={t.language_code})")
+                                break
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+
+            except TranscriptsDisabled:
+                logger.warning(f"Transcripts are disabled for video {video_id}")
+            except Exception as list_err:
+                logger.warning(f"Could not list transcripts for {video_id}: {list_err}")
+
+        # --- Strategy 5: yt-dlp subtitle download ---
+        if not transcript:
+            logger.info(f"Trying yt-dlp fallback for {video_id}")
+            try:
+                transcript = self._download_subs_yt_dlp(video_id)
+                if transcript:
+                    logger.info(f"Got transcript via yt-dlp for {video_id}")
+            except Exception as dlp_err:
+                logger.error(f"yt-dlp fallback failed for {video_id}: {dlp_err}")
+
+        # --- Strategy 6: Hardcoded fallback for known videos ---
         if not transcript:
             if video_id in ASSABIQOON_TRANSCRIPT_FALLBACK:
-                logger.info(f"Using mock transcript fallback for {video_id}")
+                logger.info(f"Using hardcoded fallback transcript for {video_id}")
                 transcript = ASSABIQOON_TRANSCRIPT_FALLBACK[video_id]
             else:
-                raise ValueError(f"Transcript unavailable for video {video_id}")
+                raise ValueError(f"Transcript unavailable for video {video_id} (all strategies exhausted)")
 
         if transcript:
             self.db_manager.set_document("transcripts", video_id, transcript)
             return transcript
-            
+
         raise ValueError(f"Transcript unavailable for video {video_id}")
 
     def _parse_time(self, t_str):
