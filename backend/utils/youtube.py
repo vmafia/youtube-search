@@ -336,7 +336,15 @@ class YouTubeClient:
             kwargs = {"languages": ["th", "en"]}
             if cookies_path:
                 kwargs["cookies"] = cookies_path
-            fetched = YouTubeTranscriptApi.get_transcript(video_id, **kwargs)
+            try:
+                fetched = YouTubeTranscriptApi.get_transcript(video_id, **kwargs)
+            except Exception as e:
+                if "cookie file was unable to be loaded" in str(e):
+                    logger.warning(f"Cookie file invalid, trying without cookies for {video_id}")
+                    fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
+                else:
+                    raise e
+                    
             transcript = _parse_fetched(fetched)
             logger.info(f"Got th/en transcript for {video_id} (direct)")
         except (TranscriptsDisabled, NoTranscriptFound) as e:
@@ -350,7 +358,14 @@ class YouTubeClient:
                 kwargs = {}
                 if cookies_path:
                     kwargs["cookies"] = cookies_path
-                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id, **kwargs)
+                try:
+                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id, **kwargs)
+                except Exception as e:
+                    if "cookie file was unable to be loaded" in str(e):
+                        logger.warning(f"Cookie file invalid, trying list_transcripts without cookies for {video_id}")
+                        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                    else:
+                        raise e
 
                 # Strategy 2: Auto-generated Thai (a.th) or English (a.en)
                 if not transcript:
@@ -387,6 +402,16 @@ class YouTubeClient:
                 logger.warning(f"Transcripts are disabled for video {video_id}")
             except Exception as list_err:
                 logger.warning(f"Could not list transcripts for {video_id}: {list_err}")
+
+        # --- Strategy 4.5: Try youtube-transcript.ai public API ---
+        if not transcript:
+            try:
+                logger.info(f"Trying public API fallback for {video_id}...")
+                transcript = self._fetch_via_public_api(video_id)
+                if transcript:
+                    logger.info(f"Got transcript via public API for {video_id}")
+            except Exception as pub_err:
+                logger.warning(f"Public API fallback failed for {video_id}: {pub_err}")
 
         # --- Strategy 5: yt-dlp subtitle download ---
         if not transcript:

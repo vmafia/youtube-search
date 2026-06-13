@@ -260,14 +260,7 @@ def search():
                     logger.warning(f"Could not fetch transcript for candidate {vid}: {fetch_err}")
 
             if not transcript:
-                # หา Transcript ไม่ได้ แต่ YouTube บอกว่าคลิปนี้เกี่ยว ก็จะ return ไปพร้อม flag missing
-                results.append({
-                    "video_id": vid,
-                    "matches": [],
-                    "title": meta["title"],
-                    "thumbnail": meta["thumbnail"],
-                    "transcript_missing": True
-                })
+                logger.warning(f"No transcript available for {vid}. Skipping.")
                 continue
 
             matches = search_transcript(transcript, expanded_queries, threshold=threshold)

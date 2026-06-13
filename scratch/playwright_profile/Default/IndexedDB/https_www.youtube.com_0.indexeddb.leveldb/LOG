@@ -1,0 +1,12 @@
+2026/06/13-15:28:02.382 bb4 Reusing MANIFEST C:\Users\hp\Documents\GitHub\youtube-search\scratch\playwright_profile\Default\IndexedDB\https_www.youtube.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/13-15:28:02.383 bb4 Recovering log #12
+2026/06/13-15:28:02.392 bb4 Reusing old log C:\Users\hp\Documents\GitHub\youtube-search\scratch\playwright_profile\Default\IndexedDB\https_www.youtube.com_0.indexeddb.leveldb/000012.log 
+2026/06/13-15:28:14.106 34ac Level-0 table #17: started
+2026/06/13-15:28:14.129 34ac Level-0 table #17: 2275486 bytes OK
+2026/06/13-15:28:14.133 34ac Delete type=0 #12
+2026/06/13-15:28:54.877 34ac Compacting 1@1 + 1@2 files
+2026/06/13-15:28:54.889 34ac Generated table #18@1: 343 keys, 86357 bytes
+2026/06/13-15:28:54.890 34ac Compacted 1@1 + 1@2 files => 86357 bytes
+2026/06/13-15:28:54.894 34ac compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/06/13-15:28:54.895 34ac Delete type=2 #14
+2026/06/13-15:28:54.895 34ac Delete type=2 #17

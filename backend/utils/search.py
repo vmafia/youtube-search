@@ -42,9 +42,18 @@ def normalize_text(text: str) -> str:
     # Strip any ending 'ห' or 'อ' that represents silent breath at the end of Arabic words
     text = re.sub(r"([ก-ฮ])ห\b", r"\1", text)
     
-    # Keep only Thai characters, English letters, and numbers
-    text = re.sub(r"[^\u0e00-\u0e7fa-zA-Z0-9\s]", "", text)
+    # Strip Arabic diacritics (Tashkeel)
+    text = re.sub(r"[\u064b-\u065f\u0670]", "", text)
     
+    # Normalize Arabic variations
+    text = text.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+    text = text.replace("ة", "ه")
+    text = text.replace("ى", "ي")
+    # Strip Kashida/Tatweel
+    text = text.replace("ـ", "")
+
+    # Keep Thai characters, English letters, numbers, and Arabic characters
+    text = re.sub(r"[^\u0e00-\u0e7fa-zA-Z0-9\u0600-\u06ff\s]", "", text)    
     # Collapse multiple spaces
     text = re.sub(r"\s+", " ", text)
     return text.strip()
