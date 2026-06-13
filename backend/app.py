@@ -113,10 +113,21 @@ def get_transcription_stats():
                 "transcribed_ids": transcribed_ids
             }), 200
 
-        # Get transcribed IDs stream
-        # This is fine for ~1000-2000 documents
-        docs = db.collection("transcripts").select([]).stream()
-        transcribed_ids = [doc.id for doc in docs]
+        # Attempt Firestore fast query
+        try:
+            # Get transcribed IDs stream
+            # This is fine for ~1000-2000 documents
+            docs = db.collection("transcripts").select([]).stream()
+            transcribed_ids = [doc.id for doc in docs]
+        except Exception as e:
+            logger.warning(f"Firestore query failed (likely quota exceeded): {e}. Falling back to local cache.")
+            cache_path = os.path.join(youtube_client.db_manager.cache_dir, "transcripts")
+            transcribed_ids = []
+            if os.path.exists(cache_path):
+                for f_name in os.listdir(cache_path):
+                    if f_name.endswith(".json"):
+                        vid = f_name[:-5]
+                        transcribed_ids.append(vid)
         
         return jsonify({
             "transcribed_count": len(transcribed_ids),
