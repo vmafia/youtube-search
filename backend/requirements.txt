@@ -6,9 +6,5 @@ youtube-transcript-api==1.2.4
 scrapetube==2.5.1
 rapidfuzz==3.9.0
 python-dotenv==1.0.1
-gunicorn==22.0.0
 firebase-admin==6.5.0
-pytest==8.2.2
-pytest-cov==5.0.0
-pytest-mock==3.14.0
 yt-dlp

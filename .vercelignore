@@ -1,0 +1,39 @@
+# Large binaries that must NOT be bundled into Lambda
+deno.exe
+
+# Python virtual environments
+venv/
+.venv/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.pytest_cache/
+.coverage
+
+# Backend runtime cache & logs (generated at runtime, not needed in bundle)
+backend/cache/
+backend/logs/
+
+# Frontend build artifacts (served separately, not part of Python Lambda)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Audio / media files
+*.m4a
+*.mp4
+*.mp3
+
+# Scratch / temp files
+scratch/
+
+# Docker files (not needed on Vercel)
+Dockerfile.backend
+Dockerfile.frontend
+docker-compose.yml
+
+# Firebase admin SDK credentials (use env vars instead)
+*-adminsdk-*.json
+transcript-search-b162c-firebase-adminsdk-fbsvc-b8a239bf14.json

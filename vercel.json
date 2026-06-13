@@ -3,7 +3,22 @@
   "builds": [
     {
       "src": "backend/app.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "excludeFiles": [
+          "deno.exe",
+          "venv/**",
+          ".venv/**",
+          "backend/cache/**",
+          "backend/logs/**",
+          "frontend/node_modules/**",
+          "frontend/dist/**",
+          "scratch/**",
+          "**/__pycache__/**",
+          "**/*.pyc",
+          "*.m4a"
+        ]
+      }
     },
     {
       "src": "frontend/package.json",
