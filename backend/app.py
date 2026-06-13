@@ -207,91 +207,85 @@ def search():
     if not video_ids or not isinstance(video_ids, list):
         raise ValueError("video_ids parameter is required and must be a list")
 
-    # Expand query using local synonyms + Gemini AI (if available)
+    # 1. Expand query using local synonyms + Gemini AI
     gemini_key = Config.GEMINI_API_KEY
     expanded_queries = expand_query(query, api_key=gemini_key)
     logger.info(f"Search request: '{query}'. Expanded queries: {expanded_queries}")
 
-    results = []
     channel_name = sanitize_input(data.get("channel_name", "@AssabiqoonPublisher"))
+    results = []
+    video_ids_set = set(video_ids)
 
-    # ─── Step 1: Optional speedup — ใช้ YouTube Search API หา video ที่น่าจะเกี่ยวข้อง
-    # ไม่ใช้เป็น gate หลัก แต่ใช้เป็นข้อมูลเสริม (title/thumbnail) และ
-    # ช่วย prioritize การดึง transcript ของ video ที่ยังไม่มีใน cache
-    yt_meta = {}  # {video_id: {title, thumbnail}}
-    yt_candidates_ids = set()  # video ที่ YouTube Search API คิดว่าเกี่ยวข้อง
+    # 2. Smart Candidate Gathering:
+    # แทนที่จะดึง transcript ทั้ง 3000 คลิป เราจะให้ YouTube Search API ช่วยหาให้
+    # โดยส่งคำค้นหา "ทุกคำ" (synonyms) ไปค้นใน YouTube เพื่อกวาดคลิปมาให้ได้มากที่สุด
+    candidate_meta = {}  # {video_id: {title, thumbnail}}
+    
     if youtube_client.api_key:
-        try:
-            matched = youtube_client.search_youtube_api(channel_name, query, max_results=100)
-            video_ids_set = set(video_ids)
-            for m in matched:
-                if m["id"] in video_ids_set:
-                    yt_meta[m["id"]] = {"title": m["title"], "thumbnail": m["thumbnail"]}
-                    yt_candidates_ids.add(m["id"])
-            logger.info(f"YouTube Search API returned {len(yt_candidates_ids)} candidates within the video list.")
-        except Exception as e:
-            logger.warning(f"YouTube Search API failed (non-critical): {str(e)}")
-
-    # ─── Step 2: ค้นหา transcript จาก DB โดยตรงทุก video_id แบ่งเป็น batch
-    # ไม่พึ่ง YouTube Search API เป็นตัวกรองหลัก เพื่อให้ได้ผลลัพธ์ครบถ้วน
-    BATCH_SIZE = 50
-    processed = set()
-
-    for i in range(0, len(video_ids), BATCH_SIZE):
-        batch = video_ids[i : i + BATCH_SIZE]
-        for vid in batch:
-            vid = sanitize_input(vid)
-            if not vid or vid in processed:
-                continue
-            processed.add(vid)
-
+        logger.info(f"Gathering candidates using YouTube Search API for {len(expanded_queries)} terms...")
+        for term in expanded_queries:
             try:
-                transcript = youtube_client.db_manager.get_document("transcripts", vid)
-
-                # ถ้าไม่มีใน cache ให้พยายามดึง:
-                # - ถ้าอยู่ใน Vercel → ดึงเฉพาะ video ที่ YouTube API บอกว่าเกี่ยวข้อง (ประหยัด quota + เวลา)
-                # - ถ้ารันใน local → ดึงทุก video ที่ไม่มีใน cache
-                if not transcript:
-                    should_fetch = (not Config.IS_VERCEL) or (vid in yt_candidates_ids)
-                    if should_fetch:
-                        try:
-                            transcript = youtube_client.fetch_video_transcript(vid)
-                        except Exception as fetch_err:
-                            logger.warning(f"Could not fetch transcript for {vid}: {fetch_err}")
-
-                if not transcript:
-                    # ไม่มี transcript เลย — ถ้าอยู่ใน yt_candidates ให้ mark ว่า missing
-                    if vid in yt_candidates_ids:
-                        meta = yt_meta[vid]
-                        results.append({
-                            "video_id": vid,
-                            "matches": [],
-                            "title": meta["title"],
-                            "thumbnail": meta["thumbnail"],
-                            "transcript_missing": True
-                        })
-                    continue
-
-                matches = search_transcript(transcript, expanded_queries, threshold=threshold)
-                if matches:
-                    meta = yt_meta.get(vid, {})
-                    result = {
-                        "video_id": vid,
-                        "matches": matches,
-                        "thumbnail": meta.get(
-                            "thumbnail",
-                            f"https://img.youtube.com/vi/{vid}/mqdefault.jpg"
-                        )
-                    }
-                    if meta.get("title"):
-                        result["title"] = meta["title"]
-                    results.append(result)
-
+                # ค้นหาทีละคำ เพื่อให้ครอบคลุมที่สุด
+                matched = youtube_client.search_youtube_api(channel_name, term, max_results=50)
+                for m in matched:
+                    vid = m["id"]
+                    if vid in video_ids_set:
+                        candidate_meta[vid] = {"title": m["title"], "thumbnail": m["thumbnail"]}
             except Exception as e:
-                logger.warning(f"Skipping video {vid} during search: {str(e)}")
+                logger.warning(f"YouTube Search API failed for term '{term}': {str(e)}")
+                
+        logger.info(f"Found {len(candidate_meta)} unique candidate videos from YouTube Search.")
+
+    # ถ้าหาจาก YouTube API ไม่ได้เลย หรือไม่มี API key ให้ดึงคลิปจาก video_ids มาส่วนหนึ่งแทน
+    if not candidate_meta:
+        logger.warning("No candidates found via YouTube Search API. Falling back to subset of video_ids.")
+        for vid in video_ids[:100]:  # จำกัดแค่ 100 คลิปป้องกัน timeout
+            candidate_meta[vid] = {"title": "", "thumbnail": f"https://img.youtube.com/vi/{vid}/mqdefault.jpg"}
+
+    # 3. Fetch Transcripts & Fuzzy Search (ทำเฉพาะ candidate)
+    # วิธีนี้จะดึง transcript แค่ ~50-200 คลิป แทนที่จะเป็น 3000 คลิป ทำให้เร็วและไม่โดนแบน
+    processed = set()
+    for vid, meta in candidate_meta.items():
+        if vid in processed:
+            continue
+        processed.add(vid)
+
+        try:
+            transcript = youtube_client.db_manager.get_document("transcripts", vid)
+
+            if not transcript:
+                try:
+                    transcript = youtube_client.fetch_video_transcript(vid)
+                except Exception as fetch_err:
+                    logger.warning(f"Could not fetch transcript for candidate {vid}: {fetch_err}")
+
+            if not transcript:
+                # หา Transcript ไม่ได้ แต่ YouTube บอกว่าคลิปนี้เกี่ยว ก็จะ return ไปพร้อม flag missing
+                results.append({
+                    "video_id": vid,
+                    "matches": [],
+                    "title": meta["title"],
+                    "thumbnail": meta["thumbnail"],
+                    "transcript_missing": True
+                })
                 continue
 
-    logger.info(f"Search complete: '{query}' — {len(results)} video(s) matched out of {len(video_ids)} searched.")
+            matches = search_transcript(transcript, expanded_queries, threshold=threshold)
+            if matches:
+                result = {
+                    "video_id": vid,
+                    "matches": matches,
+                    "thumbnail": meta["thumbnail"]
+                }
+                if meta.get("title"):
+                    result["title"] = meta["title"]
+                results.append(result)
+
+        except Exception as e:
+            logger.warning(f"Skipping candidate {vid} during search: {str(e)}")
+            continue
+
+    logger.info(f"Search complete: '{query}' — {len(results)} videos matched out of {len(candidate_meta)} candidates.")
     return jsonify({
         "query": query,
         "expanded_queries": expanded_queries,
