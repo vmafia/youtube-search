@@ -98,41 +98,29 @@ def get_transcription_stats():
     import json
     try:
         db = youtube_client.db_manager.db
+        
         if not youtube_client.db_manager.use_firebase or not db:
             cache_path = os.path.join(youtube_client.db_manager.cache_dir, "transcripts")
             transcribed_ids = []
-            no_sub_count = 0
             if os.path.exists(cache_path):
                 for f_name in os.listdir(cache_path):
                     if f_name.endswith(".json"):
                         vid = f_name[:-5]
-                        try:
-                            with open(os.path.join(cache_path, f_name), "r", encoding="utf-8") as f_in:
-                                file_data = json.load(f_in)
-                                if isinstance(file_data, dict) and file_data.get("no_subtitle") is True:
-                                    no_sub_count += 1
-                                else:
-                                    transcribed_ids.append(vid)
-                        except Exception:
-                            pass
+                        transcribed_ids.append(vid)
             return jsonify({
                 "transcribed_count": len(transcribed_ids),
-                "no_subtitle_count": no_sub_count,
+                "no_subtitle_count": 0, # Will be calculated by frontend
                 "transcribed_ids": transcribed_ids
             }), 200
 
-        # Firestore fast count queries
-        total_transcripts = db.collection("transcripts").count().get()[0][0].value
-        no_subtitle_count = db.collection("transcripts").where("no_subtitle", "==", True).count().get()[0][0].value
-        transcribed_count = total_transcripts - no_subtitle_count
-        
-        # Get transcribed IDs stream (extremely lightweight document projection)
-        docs = db.collection("transcripts").select(["no_subtitle"]).stream()
-        transcribed_ids = [doc.id for doc in docs if not doc.to_dict().get("no_subtitle")]
+        # Get transcribed IDs stream
+        # This is fine for ~1000-2000 documents
+        docs = db.collection("transcripts").select([]).stream()
+        transcribed_ids = [doc.id for doc in docs]
         
         return jsonify({
-            "transcribed_count": transcribed_count,
-            "no_subtitle_count": no_subtitle_count,
+            "transcribed_count": len(transcribed_ids),
+            "no_subtitle_count": 0, # Frontend can calculate: total_videos - transcribed_count
             "transcribed_ids": transcribed_ids
         }), 200
     except Exception as e:

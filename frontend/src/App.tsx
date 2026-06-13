@@ -761,7 +761,7 @@ export function App() {
             <div className="stat-card">
               <span className="stat-label">รอคิวแกะเสียง</span>
               <span className="stat-value" style={{ color: "#f59e0b" }}>
-                {statsLoading ? "..." : `${stats?.no_subtitle_count || 0} คลิป`}
+                {statsLoading ? "..." : `${videos.length > 0 && stats ? Math.max(0, videos.length - stats.transcribed_count) : 0} คลิป`}
               </span>
             </div>
           </div>
