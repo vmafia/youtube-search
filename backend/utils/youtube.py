@@ -322,33 +322,21 @@ class YouTubeClient:
                     result.append({"text": s.text, "start": s.start, "duration": s.duration})
             return result
 
-        # Build API instance — use cookies if available (bypass IP blocks)
-        api_instance = None
-        try:
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        # Check for cookies to bypass IP blocks
+        cookies_path = None
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if os.path.exists(os.path.join(base_dir, "cookies_new.txt")):
             cookies_path = os.path.join(base_dir, "cookies_new.txt")
-            if not os.path.exists(cookies_path):
-                cookies_path = os.path.join(base_dir, "cookies.txt")
-
-            if os.path.exists(cookies_path):
-                import http.cookiejar
-                session = requests.Session()
-                cj = http.cookiejar.MozillaCookieJar(cookies_path)
-                cj.load(ignore_discard=True, ignore_expires=True)
-                session.cookies = cj
-                try:
-                    api_instance = YouTubeTranscriptApi(http_client=session)
-                    logger.info(f"Using cookies from {cookies_path} for {video_id}")
-                except TypeError:
-                    # Older version of youtube-transcript-api doesn't support http_client
-                    api_instance = None
-        except Exception as cookie_err:
-            logger.warning(f"Could not load cookies: {cookie_err}")
+        elif os.path.exists(os.path.join(base_dir, "cookies.txt")):
+            cookies_path = os.path.join(base_dir, "cookies.txt")
 
 
         # --- Strategy 1: Direct fetch (th then en) ---
         try:
-            fetched = YouTubeTranscriptApi.get_transcript(video_id, languages=["th", "en"])
+            kwargs = {"languages": ["th", "en"]}
+            if cookies_path:
+                kwargs["cookies"] = cookies_path
+            fetched = YouTubeTranscriptApi.get_transcript(video_id, **kwargs)
             transcript = _parse_fetched(fetched)
             logger.info(f"Got th/en transcript for {video_id} (direct)")
         except (TranscriptsDisabled, NoTranscriptFound) as e:
@@ -359,7 +347,10 @@ class YouTubeClient:
         # --- Strategies 2–5: Explore all available transcripts ---
         if not transcript:
             try:
-                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                kwargs = {}
+                if cookies_path:
+                    kwargs["cookies"] = cookies_path
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id, **kwargs)
 
                 # Strategy 2: Auto-generated Thai (a.th) or English (a.en)
                 if not transcript:
