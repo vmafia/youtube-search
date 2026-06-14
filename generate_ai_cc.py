@@ -92,7 +92,7 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client) -> list:
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.5-flash',
                 contents=[myfile, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
