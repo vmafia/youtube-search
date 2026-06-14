@@ -88,12 +88,13 @@ def expand_query_ai(query: str, api_key: str) -> List[str]:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     prompt = f"""You are an Islamic scholar and linguistics expert specializing in Thai and Arabic transcriptions.
-Expand the search query "{query}" to capture all common spelling variations, transliterations, synonyms, and related terms used in Thai Islamic lectures.
-Return ONLY a JSON list of strings (maximum 8 terms, including the original query). Do not include markdown code block formatting or any text other than the raw JSON.
+Expand the search query "{query}" to capture all common spelling variations, transliterations, and exact synonyms used in Thai Islamic lectures.
+CRITICAL INSTRUCTION: ONLY output terms that mean EXACTLY the same thing as the query. Do NOT add unrelated names, historical figures, concepts, or terms. If the query is a title (like 'ชัยคฺ'), only return spelling variations of that title (e.g. 'เชค', 'ชัยค์', 'Shaykh'). Do NOT guess what the user meant if they just typed a title.
+Return ONLY a raw JSON list of strings (maximum 8 terms, including the original query). Do not include markdown code block formatting or any text other than the raw JSON.
 Example query: "น้ำละหมาด"
 Output: ["น้ำละหมาด", "อาบน้ำละหมาด", "วุฎูอ์", "วุฏู", "wudu", "wudhu"]
-Example query: "อิบาดะฮ์"
-Output: ["อิบาดะฮ์", "อิบาดะห์", "อิบาดะฮฺ", "อิบาดะ", "ibadah", "worship"]"""
+Example query: "ชัยคฺ"
+Output: ["ชัยคฺ", "ชัยค์", "เชค", "เช็ค", "shaykh", "sheikh"]"""
     data = {
         "contents": [
             {
