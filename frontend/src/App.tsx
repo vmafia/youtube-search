@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from "react";
 import useLocalStorage from "./hooks/useLocalStorage";
+import { formatDistanceToNow } from "date-fns";
+import { th } from "date-fns/locale";
+import { ChatInterface } from "./components/ChatInterface";
 
 interface Video {
   id: string;
@@ -93,7 +96,7 @@ export function App() {
     fail_count: number;
     last_updated: number;
   }
-  const [activeTab, setActiveTab] = useState<"search" | "dashboard">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "dashboard" | "chat">("search");
   const [stats, setStats] = useState<StatsData | null>(null);
   const [statsLoading, setStatsLoading] = useState<boolean>(false);
   const [dashboardSearchText, setDashboardSearchText] = useState<string>("");
@@ -392,6 +395,13 @@ export function App() {
         </button>
         <button
           type="button"
+          className={`tab-btn ${activeTab === "chat" ? "active" : ""}`}
+          onClick={() => setActiveTab("chat")}
+        >
+          💬 แชทบอท AI
+        </button>
+        <button
+          type="button"
           className={`tab-btn ${activeTab === "dashboard" ? "active" : ""}`}
           onClick={() => setActiveTab("dashboard")}
         >
@@ -568,13 +578,33 @@ export function App() {
 
           {/* Search Results */}
           <div className="results-section">
-            {searchResults.length > 0 && (
+            {searchResults.length > 0 && !loading && (
               <div className="results-header">
                 พบผลลัพธ์ทั้งหมด {searchResults.length} วิดีโอ
               </div>
             )}
             
-            {searchResults.map((result) => {
+            {loading && (
+              <>
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="skeleton-card">
+                    <div className="skeleton-header">
+                      <div className="skeleton skeleton-thumb"></div>
+                      <div className="skeleton-lines">
+                        <div className="skeleton skeleton-line medium"></div>
+                        <div className="skeleton skeleton-line short"></div>
+                      </div>
+                    </div>
+                    <div className="skeleton-lines" style={{ padding: '0 0.5rem' }}>
+                      <div className="skeleton skeleton-line long"></div>
+                      <div className="skeleton skeleton-line medium"></div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+            
+            {!loading && searchResults.map((result) => {
               const videoInfo = videos.find((v) => v.id === result.video_id);
               const title = (result as any).title || (videoInfo ? videoInfo.title : result.video_id);
               const thumbnail = (result as any).thumbnail || (videoInfo ? videoInfo.thumbnail : "");
@@ -637,7 +667,19 @@ export function App() {
                             ▶ {match.timestamp}
                           </a>
                           <div className="match-text-container">
-                            <p className="match-text">"{match.text}"</p>
+                            <p className="match-text">
+                              "
+                              {(() => {
+                                if (!searchQuery.trim()) return match.text;
+                                const parts = match.text.split(new RegExp(`(${searchQuery.trim()})`, 'gi'));
+                                return parts.map((part, i) => 
+                                  part.toLowerCase() === searchQuery.trim().toLowerCase() 
+                                    ? <mark key={i} className="glow">{part}</mark> 
+                                    : part
+                                );
+                              })()}
+                              "
+                            </p>
                             <div className="match-meta">
                               <span className={`badge ${match.match_type}`}>
                                 {match.match_type === "exact" && "ตรงเป๊ะ"}
@@ -679,6 +721,10 @@ export function App() {
             )}
           </div>
         </>
+      ) : activeTab === "chat" ? (
+        <div style={{ animation: "slideIn 0.25s ease-out" }}>
+          <ChatInterface />
+        </div>
       ) : (
         /* New Dashboard Panel */
         <div className="dashboard-container" style={{ animation: "slideIn 0.25s ease-out" }}>

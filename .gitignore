@@ -8,7 +8,6 @@ cookies.txt
 cookies.txt.txt
 cookies_new.txt
 
-
 # Python
 **/__pycache__/
 **/*.pyc
@@ -29,3 +28,19 @@ frontend/.vite/
 Thumbs.db
 
 bulk_index_progress.json
+
+# Cache and generated data
+backend/cache/optimized/
+backend/cache/channels/
+backend/cache/raw/
+backend/cache/transcripts/
+backend/cache/*.json.gz
+!backend/cache/all_transcripts.json.gz
+!backend/cache/all_videos.json.gz
+
+# Large temporary DB and Index files
+backend/cache/transcripts.db
+backend/cache/transcripts.db.gz
+frontend/public/search_index.json
+frontend/public/search_optimized.json.gz
+*.txt

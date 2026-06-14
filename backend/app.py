@@ -351,5 +351,110 @@ def debug_cache():
         "sys_path": sys.path
     }), 200
 
+@app.route("/api/chat", methods=["POST"])
+@limiter.limit("15 per minute")
+def chat():
+    from backend.utils.llm import generate_completion
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+            
+        messages = data.get("messages", [])
+        if not messages:
+            return jsonify({"error": "Messages array is required"}), 400
+            
+        # Get the latest user question
+        last_message = next((m["content"] for m in reversed(messages) if m["role"] == "user"), None)
+        if not last_message:
+            return jsonify({"error": "No user message found"}), 400
+
+        # Optional: Channel filter
+        channel_name = data.get("channel_name", "").strip()
+
+        # Step 1: Extract keywords from the question using the LLM itself
+        # This is a simple trick to build RAG without a Vector DB!
+        keyword_prompt = [
+            {"role": "system", "content": "Extract 1 to 3 search keywords from the user's question to search a database of YouTube transcripts. Output ONLY the keywords separated by spaces. Do not output anything else. Example output: บาปใหญ่ นบีปลอม"},
+            {"role": "user", "content": last_message}
+        ]
+        
+        # We wrap this in a try-catch so if LLM fails, we just fallback to the original question as keyword
+        keywords = last_message
+        try:
+            extracted = generate_completion(keyword_prompt, temperature=0.1)
+            if extracted and len(extracted) < 50:
+                keywords = extracted.strip()
+        except Exception as e:
+            logger.warning(f"Keyword extraction failed, using original question: {e}")
+
+        # Step 2: Search transcripts
+        logger.info(f"RAG searching for keywords: {keywords}")
+        
+        # Load global transcripts from cache (memory)
+        from backend.app import load_transcripts_from_cache
+        transcripts_data = load_transcripts_from_cache()
+        
+        # Get all videos info to map IDs
+        import json
+        import gzip
+        videos_info = []
+        try:
+            # We need the videos to get channel filtering if needed
+            # For simplicity in RAG, we just search across all transcripts
+            pass
+        except:
+            pass
+
+        # Perform the search
+        expanded_queries = expand_query(keywords)
+        results = search_transcript(expanded_queries, transcripts_data, threshold=80)
+        
+        # Take the top 5 matches to build context
+        top_matches = results[:5]
+        context_text = ""
+        
+        if top_matches:
+            context_text = "อ้างอิงจากข้อมูลซับไตเติ้ลในฐานข้อมูล:\n"
+            for r in top_matches:
+                vid = r["video_id"]
+                for m in r["matches"][:2]: # take top 2 snippets per video
+                    context_text += f"- วิดีโอ {vid} (นาทีที่ {m['timestamp']}): \"{m['text']}\"\n"
+        else:
+            context_text = "ไม่มีข้อมูลในฐานข้อมูลที่ตรงกับคำถามนี้"
+
+        # Step 3: Build the final prompt and call the LLM
+        system_prompt = f"""คุณคือผู้ช่วย AI ผู้เชี่ยวชาญด้านอิสลามศึกษา คุณมีหน้าที่ตอบคำถามโดยอ้างอิงจากบริบทข้อมูลซับไตเติ้ลวิดีโอ (YouTube Transcripts) ที่ระบบค้นหามาให้เท่านั้น
+        
+บริบทข้อมูลที่ค้นหาพบ:
+{context_text}
+
+กฎในการตอบ:
+1. ให้ตอบคำถามโดยอิงจาก 'บริบทข้อมูลที่ค้นหาพบ' เป็นหลัก
+2. หากในบริบทข้อมูลไม่มีเนื้อหาที่ตอบคำถามได้ ให้ตอบตรงๆ ว่า "ไม่พบข้อมูลนี้ในฐานข้อมูลคลิปวิดีโอ" หรือใช้ความรู้ทั่วไปเสริมได้เล็กน้อยแต่ต้องบอกให้ชัดเจน
+3. ห้ามแต่งเติมข้อมูลที่บิดเบือนจากหลักศาสนา
+4. ใช้ภาษาที่สุภาพ เป็นธรรมชาติ และเข้าใจง่าย
+5. หากมีการอ้างอิงวิดีโอ ให้บอกด้วยว่าพบในวิดีโอ ID ใด (เช่น วิดีโอ id xyz นาทีที่ 12:30)
+"""
+        
+        # Inject our system prompt at the beginning of the conversation
+        final_messages = [{"role": "system", "content": system_prompt}]
+        
+        # We only pass the last 5 messages to save tokens and context limit
+        final_messages.extend(messages[-5:])
+        
+        # Generate the final answer
+        answer = generate_completion(final_messages, temperature=0.7)
+        
+        return jsonify({
+            "response": answer,
+            "context_used": top_matches,
+            "keywords_searched": keywords
+        }), 200
+
+    except Exception as e:
+        logger.exception("Chat API Error")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=Config.DEBUG)
