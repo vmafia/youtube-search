@@ -5,6 +5,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+_client = None
+
 def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=False):
     from google import genai
     from google.genai import types
@@ -12,12 +14,15 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
     import logging
     
     logger = logging.getLogger(__name__)
+    global _client
     
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY not found in environment variables.")
+    if _client is None:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY not found in environment variables.")
+        _client = genai.Client(api_key=api_key)
         
-    client = genai.Client(api_key=api_key)
+    client = _client
     
     # Convert OpenAI message format to Gemini format
     system_instruction = ""
@@ -39,7 +44,7 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
         
         if stream:
             response = client.models.generate_content_stream(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 contents=gemini_messages,
                 config=config
             )
@@ -50,7 +55,7 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
             return generate()
         else:
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 contents=gemini_messages,
                 config=config
             )
