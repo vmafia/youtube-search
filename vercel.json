@@ -16,7 +16,8 @@
           "**/__pycache__/**",
           "**/*.pyc",
           "*.m4a"
-        ]
+        ],
+        "includeFiles": "backend/cache/**"
       }
     },
     {

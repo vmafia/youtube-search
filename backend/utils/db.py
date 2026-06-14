@@ -43,8 +43,8 @@ class DatabaseManager:
             logger.warning("FIREBASE_SERVICE_ACCOUNT_JSON is not defined. Falling back to local file caching.")
 
     def _get_local_path(self, collection: str, key: str) -> str:
-        # Sanitise key for filesystem
-        clean_key = "".join([c if c.isalnum() else "_" for c in key])
+        # Sanitise key for filesystem, preserving - and _ which are valid in YouTube IDs
+        clean_key = "".join([c if c.isalnum() or c in "-_" else "_" for c in key])
         return os.path.join(self.cache_dir, collection, f"{clean_key}.json")
 
     def get_document(self, collection: str, doc_id: str) -> Optional[Any]:
