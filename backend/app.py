@@ -100,13 +100,7 @@ def get_transcription_stats():
         db = youtube_client.db_manager.db
         
         if not youtube_client.db_manager.use_firebase or not db:
-            cache_path = os.path.join(youtube_client.db_manager.cache_dir, "transcripts")
-            transcribed_ids = []
-            if os.path.exists(cache_path):
-                for f_name in os.listdir(cache_path):
-                    if f_name.endswith(".json.gz"):
-                        vid = f_name[:-8]
-                        transcribed_ids.append(vid)
+            transcribed_ids = youtube_client.db_manager.get_all_document_ids("transcripts")
             return jsonify({
                 "transcribed_count": len(transcribed_ids),
                 "no_subtitle_count": 0, # Will be calculated by frontend
@@ -121,13 +115,7 @@ def get_transcription_stats():
             transcribed_ids = [doc.id for doc in docs]
         except Exception as e:
             logger.warning(f"Firestore query failed (likely quota exceeded): {e}. Falling back to local cache.")
-            cache_path = os.path.join(youtube_client.db_manager.cache_dir, "transcripts")
-            transcribed_ids = []
-            if os.path.exists(cache_path):
-                for f_name in os.listdir(cache_path):
-                    if f_name.endswith(".json"):
-                        vid = f_name[:-5]
-                        transcribed_ids.append(vid)
+            transcribed_ids = youtube_client.db_manager.get_all_document_ids("transcripts")
         
         return jsonify({
             "transcribed_count": len(transcribed_ids),
@@ -349,6 +337,22 @@ def bulk_index():
             "already_cached": len(already_cached),
             "failed": len(failed)
         }
+    }), 200
+
+@app.route("/api/debug/cache", methods=["GET"])
+def debug_cache():
+    import os
+    import sys
+    cache_path = os.path.join(app.config["CACHE_DIR"], "transcripts")
+    files = []
+    if os.path.exists(cache_path):
+        files = os.listdir(cache_path)
+    return jsonify({
+        "cache_path": cache_path,
+        "exists": os.path.exists(cache_path),
+        "files_count": len(files),
+        "files_sample": files[:10],
+        "sys_path": sys.path
     }), 200
 
 if __name__ == "__main__":
