@@ -104,8 +104,8 @@ def get_transcription_stats():
             transcribed_ids = []
             if os.path.exists(cache_path):
                 for f_name in os.listdir(cache_path):
-                    if f_name.endswith(".json"):
-                        vid = f_name[:-5]
+                    if f_name.endswith(".json.gz"):
+                        vid = f_name[:-8]
                         transcribed_ids.append(vid)
             return jsonify({
                 "transcribed_count": len(transcribed_ids),

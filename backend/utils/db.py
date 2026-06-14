@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import gzip
 import firebase_admin
 from firebase_admin import credentials, firestore
 from typing import Optional, Any
@@ -45,7 +46,7 @@ class DatabaseManager:
     def _get_local_path(self, collection: str, key: str) -> str:
         # Sanitise key for filesystem, preserving - and _ which are valid in YouTube IDs
         clean_key = "".join([c if c.isalnum() or c in "-_" else "_" for c in key])
-        return os.path.join(self.cache_dir, collection, f"{clean_key}.json")
+        return os.path.join(self.cache_dir, collection, f"{clean_key}.json.gz")
 
     def get_document(self, collection: str, doc_id: str) -> Optional[Any]:
         """Gets a document from Firestore or falls back to local cache."""
@@ -63,7 +64,7 @@ class DatabaseManager:
         local_path = self._get_local_path(collection, doc_id)
         if os.path.exists(local_path):
             try:
-                with open(local_path, "r", encoding="utf-8") as f:
+                with gzip.open(local_path, "rt", encoding="utf-8") as f:
                     logger.info(f"Retrieved {doc_id} from local cache ({collection})")
                     return json.load(f)
             except Exception as e:
@@ -83,7 +84,11 @@ class DatabaseManager:
         local_dir = os.path.join(self.cache_dir, collection)
         if os.path.exists(local_dir):
             try:
-                return [f[:-5] for f in os.listdir(local_dir) if f.endswith(".json")]
+                docs = []
+                for filename in os.listdir(local_dir):
+                    if filename.endswith(".json.gz"):
+                        docs.append(filename[:-8])
+                return docs
             except Exception as e:
                 logger.error(f"Local cache list error for {collection}: {str(e)}")
         return []
@@ -103,8 +108,8 @@ class DatabaseManager:
         local_path = self._get_local_path(collection, doc_id)
         try:
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            with open(local_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            with gzip.open(local_path, "wt", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
                 logger.info(f"Saved {doc_id} to local cache ({collection})")
         except Exception as e:
             logger.error(f"Local cache write error for {doc_id}: {str(e)}")
