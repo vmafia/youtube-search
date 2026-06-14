@@ -88,7 +88,7 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client) -> list:
     
     log("Waiting for Gemini to transcribe...", "INFO")
     
-    max_retries = 5
+    max_retries = 50 # Increase retries to handle long daily quota pauses
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
@@ -103,8 +103,13 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client) -> list:
         except Exception as e:
             error_str = str(e).lower()
             if "429" in error_str or "quota" in error_str or "rate limit" in error_str or "exhausted" in error_str:
-                wait_time = 60 * (attempt + 1)
-                log(f"Rate limit hit! Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...", "WARN")
+                # If we've retried many times, it might be a DAILY limit. Sleep for 1 hour.
+                if attempt >= 5:
+                    wait_time = 3600
+                    log(f"Likely hit DAILY quota! Sleeping for 1 hour before retry {attempt + 1}/{max_retries}...", "WARN")
+                else:
+                    wait_time = 60 * (attempt + 1)
+                    log(f"Rate limit hit! Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...", "WARN")
                 time.sleep(wait_time)
             else:
                 log(f"Failed to transcribe with Gemini: {e}", "ERR")

@@ -15,9 +15,7 @@ cookies_new.txt
 **/*.pyo
 **/*.pyd
 .pytest_cache/
-.venv/
 venv/
-backend/cache/
 backend/logs/
 
 # Node / Frontend
