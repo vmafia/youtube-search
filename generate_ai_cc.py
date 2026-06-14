@@ -260,7 +260,6 @@ def main():
                 db_manager.set_document("transcripts", vid, transcript)
                 
                 # Also save directly to Turso search.db
-                import os
                 import libsql_client
                 from dotenv import load_dotenv
                 load_dotenv()
@@ -269,7 +268,7 @@ def main():
                 auth_token = os.environ.get("TURSO_AUTH_TOKEN")
                 if db_url and auth_token:
                     try:
-                        client = libsql_client.create_client_sync(url=db_url, auth_token=auth_token)
+                        turso_client = libsql_client.create_client_sync(url=db_url, auth_token=auth_token)
                         
                         queries = []
                         for line in transcript:
@@ -287,9 +286,9 @@ def main():
                             ))
                             
                         if queries:
-                            client.batch(queries)
-                            client.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES('optimize')")
-                        client.close()
+                            turso_client.batch(queries)
+                            turso_client.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES('optimize')")
+                        turso_client.close()
                     except Exception as e:
                         log(f"Failed to save {vid} to Turso: {e}", "ERR")
 
