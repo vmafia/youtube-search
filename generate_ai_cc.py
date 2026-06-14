@@ -87,15 +87,41 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client) -> list:
     """
     
     log("Waiting for Gemini to transcribe...", "INFO")
-    response = client.models.generate_content(
-        model='gemini-1.5-flash',
-        contents=[myfile, prompt],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.0
-        )
-    )
     
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=[myfile, prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0
+                )
+            )
+            break # Success, break out of retry loop
+        except Exception as e:
+            error_str = str(e).lower()
+            if "429" in error_str or "quota" in error_str or "rate limit" in error_str or "exhausted" in error_str:
+                wait_time = 60 * (attempt + 1)
+                log(f"Rate limit hit! Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...", "WARN")
+                time.sleep(wait_time)
+            else:
+                log(f"Failed to transcribe with Gemini: {e}", "ERR")
+                # Cleanup file on Google's servers before returning
+                try:
+                    client.files.delete(name=myfile.name)
+                except:
+                    pass
+                return []
+    else:
+        log("Max retries reached for Gemini API. Skipping.", "ERR")
+        try:
+            client.files.delete(name=myfile.name)
+        except:
+            pass
+        return []
+
     # Cleanup file on Google's servers
     try:
         client.files.delete(name=myfile.name)
@@ -244,9 +270,9 @@ def main():
             
         update_status(status)
         
-        # Rate limit protection (Gemini free tier allows 15 RPM, which is 1 every 4 seconds)
-        # We also want to be polite to YouTube.
-        time.sleep(2)
+        # Rate limit protection: Sleep for 30 seconds to prevent hitting the 250k Tokens/Min limit
+        log("Sleeping 30 seconds to avoid hitting API rate limits...", "INFO")
+        time.sleep(30)
 
     log(f"Finished! Success: {success}, Failed: {failed}", "OK")
     
