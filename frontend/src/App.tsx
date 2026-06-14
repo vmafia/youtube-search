@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from "react";
 import useLocalStorage from "./hooks/useLocalStorage";
-import { formatDistanceToNow } from "date-fns";
-import { th } from "date-fns/locale";
 import { ChatInterface } from "./components/ChatInterface";
-
 interface Video {
   id: string;
   title: string;
