@@ -238,6 +238,10 @@ def search_transcript(transcript: List[Dict[str, Any]], query: Any, threshold: f
             if not norm_query:
                 continue
 
+            # Prevent matching very short subtitle segments (like "ฮ") against long queries
+            if len(norm_text) < len(norm_query) * 0.6:
+                continue
+
             # 1. Exact Match / Substring Match (Case-Insensitive normalized)
             if norm_query in norm_text:
                 is_match = True
