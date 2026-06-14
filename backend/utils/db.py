@@ -21,6 +21,9 @@ class DatabaseManager:
         firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
         project_id = os.environ.get("FIREBASE_PROJECT_ID", "transcript-search-b162c")
 
+        if os.environ.get("VERCEL"):
+            self._ensure_vercel_cache()
+
         if firebase_json:
             try:
                 # If json is a path to a file
@@ -43,6 +46,25 @@ class DatabaseManager:
         else:
             self.init_error = "FIREBASE_SERVICE_ACCOUNT_JSON env var is missing"
             logger.warning("FIREBASE_SERVICE_ACCOUNT_JSON is not defined. Falling back to local file caching.")
+
+    def _ensure_vercel_cache(self):
+        """On Vercel, downloads the cache.zip from GitHub into /tmp if not already present."""
+        if not os.path.exists(os.path.join(self.writable_cache_dir, "transcripts")):
+            try:
+                import urllib.request
+                import zipfile
+                import io
+                logger.info("Vercel environment detected. Downloading cache_archive.zip from GitHub...")
+                url = "https://raw.githubusercontent.com/vmafia/youtube-search/main/backend/cache_archive.zip"
+                response = urllib.request.urlopen(url)
+                logger.info("Download complete. Extracting to /tmp/cache/transcripts...")
+                with zipfile.ZipFile(io.BytesIO(response.read())) as z:
+                    extract_path = os.path.join(self.writable_cache_dir, "transcripts")
+                    os.makedirs(extract_path, exist_ok=True)
+                    z.extractall(extract_path)
+                logger.info("Cache extraction complete.")
+            except Exception as e:
+                logger.error(f"Failed to download/extract cache on Vercel: {e}")
 
     def _get_local_paths(self, collection: str, key: str) -> list[str]:
         clean_key = "".join([c if c.isalnum() or c in "-_" else "_" for c in key])
