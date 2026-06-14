@@ -392,8 +392,8 @@ def chat():
         logger.info(f"RAG searching for keywords: {keywords}")
         
         # Load global transcripts from cache (memory)
-        from backend.app import load_transcripts_from_cache
-        transcripts_data = load_transcripts_from_cache()
+        from backend.app import load_all_transcripts
+        transcripts_data = load_all_transcripts()
         
         # Get all videos info to map IDs
         import json
