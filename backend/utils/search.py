@@ -85,7 +85,7 @@ def get_local_synonyms(query: str) -> List[str]:
 def expand_query_ai(query: str, api_key: str) -> List[str]:
     if not api_key:
         return [query]
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     prompt = f"""You are an Islamic scholar and linguistics expert specializing in Thai and Arabic transcriptions.
 Expand the search query "{query}" to capture all common spelling variations, transliterations, and exact synonyms used in Thai Islamic lectures.

@@ -29,12 +29,20 @@ def search_sqlite_fts(query: str, limit: int = 50, video_ids: List[str] = None) 
         return []
         
     # Clean the query for FTS5 (remove quotes, special chars)
+    from backend.utils.search import normalize_text
+    
     clean_query = query.replace('"', '').replace("'", "")
-    terms = [term for term in clean_query.split() if term]
-    if not terms:
+    raw_terms = [term for term in clean_query.split() if term]
+    if not raw_terms:
         return []
         
-    fts_query = " AND ".join(f'"{term}"*' for term in terms)
+    # Normalize each term so that FTS5 MATCH works against norm_text column
+    normalized_terms = [normalize_text(term) for term in raw_terms]
+    normalized_terms = [term for term in normalized_terms if term]
+    if not normalized_terms:
+        normalized_terms = raw_terms
+        
+    fts_query = " AND ".join(f'"{term}"*' for term in normalized_terms)
     
     video_filter = ""
     params = [fts_query]
@@ -61,6 +69,38 @@ def search_sqlite_fts(query: str, limit: int = 50, video_ids: List[str] = None) 
     try:
         rs = client.execute(sql, params)
         rows = rs.rows
+        
+        # If FTS MATCH returned no rows, fallback to substring LIKE query in the normalized column
+        if not rows and normalized_terms:
+            like_conditions = []
+            like_params = []
+            for term in normalized_terms:
+                like_conditions.append("norm_text LIKE ?")
+                like_params.append(f"%{term}%")
+                
+            like_video_filter = ""
+            query_params = like_params
+            if video_ids:
+                placeholders = ",".join("?" * len(video_ids))
+                like_video_filter = f" AND video_id IN ({placeholders})"
+                query_params = like_params + video_ids
+                
+            fallback_sql = f"""
+                SELECT 
+                    video_id, 
+                    start_time, 
+                    timestamp, 
+                    text, 
+                    0 as score
+                FROM transcripts_fts
+                WHERE {" AND ".join(like_conditions)}
+                {like_video_filter}
+                LIMIT {limit * 3}
+            """
+            logger.info(f"FTS MATCH yielded 0 results. Falling back to LIKE query for terms: {normalized_terms}")
+            rs = client.execute(fallback_sql, query_params)
+            rows = rs.rows
+            
     except Exception as e:
         logger.error(f"Turso FTS5 error: {e}")
         return []
