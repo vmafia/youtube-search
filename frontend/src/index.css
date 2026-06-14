@@ -733,13 +733,14 @@ body {
   flex-direction: column;
   height: 600px;
   max-height: 70vh;
-  background: rgba(10, 10, 10, 0.6);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 16px;
+  background: rgba(10, 10, 10, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
   overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-  animation: slideIn 0.3s ease-out;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+  animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .chat-messages {
@@ -749,6 +750,21 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  scroll-behavior: smooth;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .chat-empty {
@@ -766,7 +782,7 @@ body {
   gap: 1rem;
   align-items: flex-start;
   max-width: 85%;
-  animation: slideIn 0.2s ease-out;
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .chat-message.user {
@@ -798,6 +814,8 @@ body {
   justify-content: center;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+
   border: 1px solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }

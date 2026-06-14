@@ -6,12 +6,26 @@ const API_BASE = import.meta.env.VITE_API_URL ||
     : "");
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<{role: 'user'|'assistant'|'system', content: string, context?: any[]}[]>([]);
+  const [messages, setMessages] = useState<{role: 'user'|'assistant'|'system', content: string, context?: any[]}[]>(() => {
+    // Load from localStorage on mount
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("chat_history");
+      if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+      }
+    }
+    return [];
+  });
+  
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Save to localStorage whenever messages change
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("chat_history", JSON.stringify(messages));
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -23,9 +37,11 @@ export function ChatInterface() {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    
+    // Add an empty assistant message to stream into
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-      // Create message history payload (excluding context to save bandwidth)
       const messageHistory = [...messages, userMessage].map(m => ({ role: m.role, content: m.content }));
       
       const response = await fetch(`${API_BASE}/api/chat`, {
@@ -34,30 +50,89 @@ export function ChatInterface() {
         body: JSON.stringify({ messages: messageHistory })
       });
       
-      const data = await response.json();
-      
       if (!response.ok) {
-        throw new Error(data.error || "เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI");
       }
       
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: data.response,
-        context: data.context_used
-      }]);
+      if (!response.body) throw new Error("No response body");
+      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let done = false;
+      let assistantText = "";
+      
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          const chunkStr = decoder.decode(value, { stream: true });
+          const lines = chunkStr.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6).trim();
+              if (dataStr === '[DONE]') {
+                done = true;
+                break;
+              }
+              try {
+                const data = JSON.parse(dataStr);
+                if (data.type === 'context') {
+                  setMessages(prev => {
+                    const newMsgs = [...prev];
+                    newMsgs[newMsgs.length - 1].context = data.context_used;
+                    return newMsgs;
+                  });
+                } else if (data.type === 'chunk') {
+                  assistantText += data.content;
+                  setMessages(prev => {
+                    const newMsgs = [...prev];
+                    newMsgs[newMsgs.length - 1].content = assistantText;
+                    return newMsgs;
+                  });
+                }
+              } catch (err) {
+                // Ignore incomplete JSON chunks or parse errors
+              }
+            }
+          }
+        }
+      }
       
     } catch (err: any) {
-      setMessages(prev => [...prev, {
-        role: 'system',
-        content: `Error: ${err.message}`
-      }]);
+      setMessages(prev => {
+        // Remove the empty assistant message if it failed before typing
+        const msgs = [...prev];
+        if (msgs[msgs.length - 1].content === '') {
+            msgs.pop();
+        }
+        return [...msgs, {
+          role: 'system',
+          content: `Error: ${err.message}`
+        }];
+      });
     } finally {
       setLoading(false);
     }
   };
 
+  const clearHistory = () => {
+    if(confirm("คุณต้องการลบประวัติการสนทนาทั้งหมดหรือไม่?")) {
+      setMessages([]);
+      localStorage.removeItem("chat_history");
+    }
+  };
+
   return (
     <div className="chat-container">
+      <div className="chat-header" style={{display: 'flex', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid var(--border)', alignItems: 'center'}}>
+        <h3 style={{margin: 0, fontSize: '1rem', color: 'var(--t1)'}}>AI แชทบอท</h3>
+        {messages.length > 0 && (
+          <button onClick={clearHistory} style={{background: 'transparent', border: '1px solid var(--border)', color: 'var(--t2)', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem'}}>
+            ลบแชท
+          </button>
+        )}
+      </div>
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-empty">
@@ -75,8 +150,8 @@ export function ChatInterface() {
               {msg.role === 'user' ? '🧑‍💻' : (msg.role === 'assistant' ? '🤖' : '⚠️')}
             </div>
             <div className="chat-message-content">
-              <div className="chat-bubble">
-                {msg.content}
+              <div className="chat-bubble" style={{ whiteSpace: 'pre-wrap' }}>
+                {msg.content || (loading && i === messages.length - 1 ? <span className="typing-indicator"><span className="dot"></span><span className="dot"></span><span className="dot"></span></span> : '')}
               </div>
               
               {/* Show referenced videos if AI used context */}
@@ -101,19 +176,6 @@ export function ChatInterface() {
             </div>
           </div>
         ))}
-        
-        {loading && (
-          <div className="chat-message assistant">
-            <div className="chat-message-avatar">🤖</div>
-            <div className="chat-message-content">
-              <div className="chat-bubble typing">
-                <span className="dot"></span>
-                <span className="dot"></span>
-                <span className="dot"></span>
-              </div>
-            </div>
-          </div>
-        )}
         <div ref={messagesEndRef} />
       </div>
       

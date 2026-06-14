@@ -5,7 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def generate_completion(messages, model="gpt-4o-mini", temperature=0.7):
+def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=False):
     # Default to UncleDev's API if no OPENAI_BASE_URL is provided, or fallback to standard OpenAI
     base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
     
@@ -17,6 +17,9 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7):
     api_key = os.environ.get("UNCLEDEV_API_KEY") or os.environ.get("OPENAI_API_KEY")
     
     if not api_key:
+        if stream:
+            yield '{"error": "API Key not found"}'
+            return
         raise ValueError("API Key not found. Please set UNCLEDEV_API_KEY or OPENAI_API_KEY.")
         
     headers = {
@@ -28,7 +31,8 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7):
     data = {
         "model": model,
         "messages": messages,
-        "temperature": temperature
+        "temperature": temperature,
+        "stream": stream
     }
     
     req = urllib.request.Request(url, headers=headers, data=json.dumps(data).encode("utf-8"))
@@ -40,7 +44,26 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7):
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         
-        with urllib.request.urlopen(req, context=ctx) as response:
+        response = urllib.request.urlopen(req, context=ctx)
+        
+        if stream:
+            def generate():
+                for line in response:
+                    line = line.decode('utf-8').strip()
+                    if not line:
+                        continue
+                    if line == "data: [DONE]":
+                        break
+                    if line.startswith("data: "):
+                        try:
+                            chunk = json.loads(line[6:])
+                            content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                            if content:
+                                yield content
+                        except:
+                            pass
+            return generate()
+        else:
             result = json.loads(response.read().decode("utf-8"))
             return result["choices"][0]["message"]["content"]
     except urllib.error.HTTPError as e:

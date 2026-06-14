@@ -95,36 +95,9 @@ def health():
 
 @app.route("/api/transcription-stats", methods=["GET"])
 def get_transcription_stats():
-    import json
-    try:
-        db = youtube_client.db_manager.db
-        
-        if not youtube_client.db_manager.use_firebase or not db:
-            transcribed_ids = youtube_client.db_manager.get_all_document_ids("transcripts")
-            return jsonify({
-                "transcribed_count": len(transcribed_ids),
-                "no_subtitle_count": 0, # Will be calculated by frontend
-                "transcribed_ids": transcribed_ids
-            }), 200
-
-        # Attempt Firestore fast query
-        try:
-            # Get transcribed IDs stream
-            # This is fine for ~1000-2000 documents
-            docs = db.collection("transcripts").select([]).stream()
-            transcribed_ids = [doc.id for doc in docs]
-        except Exception as e:
-            logger.warning(f"Firestore query failed (likely quota exceeded): {e}. Falling back to local cache.")
-            transcribed_ids = youtube_client.db_manager.get_all_document_ids("transcripts")
-        
-        return jsonify({
-            "transcribed_count": len(transcribed_ids),
-            "no_subtitle_count": 0, # Frontend can calculate: total_videos - transcribed_count
-            "transcribed_ids": transcribed_ids
-        }), 200
-    except Exception as e:
-        logger.error(f"Error fetching transcription stats: {str(e)}")
-        raise e
+    from backend.utils.search_db import get_db_stats
+    stats = get_db_stats()
+    return jsonify(stats), 200
 
 @app.route("/api/transcription-status", methods=["GET"])
 def get_transcription_status():
@@ -218,54 +191,29 @@ def search():
     data = request.get_json() or {}
     video_ids = data.get("video_ids", [])
     query = sanitize_input(data.get("query", ""))
-    threshold = data.get("threshold", 80.0)
     
     if not query:
         raise ValueError("query parameter is required")
-    if not video_ids or not isinstance(video_ids, list):
-        raise ValueError("video_ids parameter is required and must be a list")
 
-    # 1. Expand query using local synonyms + Gemini AI
     gemini_key = Config.GEMINI_API_KEY
     expanded_queries = expand_query(query, api_key=gemini_key)
     logger.info(f"Search request: '{query}'. Expanded queries: {expanded_queries}")
 
-    channel_name = sanitize_input(data.get("channel_name", "@AssabiqoonPublisher"))
-    results = []
-    video_ids_set = set(video_ids)
+    from backend.utils.search_db import search_sqlite_fts
+    # Use the first term for FTS5 (FTS5 handles multiple keywords easily)
+    search_term = " ".join(expanded_queries)
+    results = search_sqlite_fts(search_term, limit=50, video_ids=video_ids if video_ids else None)
 
-    # 2. In-Memory Search
-    # โหลดไฟล์ all_transcripts ทีเดียว แล้วค้นหาในหน่วยความจำ จะเร็วและหาเจอ 100%
-    all_data = load_all_transcripts()
-    logger.info(f"Searching across {len(all_data)} transcripts in memory for {len(expanded_queries)} terms...")
-    
-    for vid, transcript in all_data.items():
-        if not video_ids_set or vid in video_ids_set:
-            try:
-                matches = search_transcript(transcript, expanded_queries, threshold=threshold)
-                if matches:
-                    results.append({
-                        "video_id": vid,
-                        "matches": matches,
-                        "thumbnail": f"https://img.youtube.com/vi/{vid}/mqdefault.jpg"
-                    })
-            except Exception as e:
-                logger.warning(f"Error searching in video {vid}: {str(e)}")
-                continue
-                
-    # Sort results by best match score
     for r in results:
-        r["best_score"] = max(m["score"] for m in r["matches"])
-    results.sort(key=lambda x: x["best_score"], reverse=True)
-    
-    # Limit to top 50 to avoid massive payloads
-    top_results = results[:50]
+        r["thumbnail"] = f"https://img.youtube.com/vi/{r['video_id']}/mqdefault.jpg"
+        # Best score is mapped correctly in search_db
+        r["best_score"] = r["max_score"]
 
-    logger.info(f"Search complete: '{query}' — {len(top_results)} videos returned out of {len(results)} total matches.")
+    logger.info(f"Search complete: '{query}' — {len(results)} videos returned.")
     return jsonify({
         "query": query,
         "expanded_queries": expanded_queries,
-        "results": top_results
+        "results": results
     }), 200
 
 
@@ -391,42 +339,12 @@ def chat():
         # Step 2: Search transcripts
         logger.info(f"RAG searching for keywords: {keywords}")
         
-        # Load global transcripts from cache (memory)
-        from backend.app import load_all_transcripts
-        transcripts_data = load_all_transcripts()
+        from backend.utils.search_db import search_sqlite_fts
         
-        # Get all videos info to map IDs
-        import json
-        import gzip
-        videos_info = []
-        try:
-            # We need the videos to get channel filtering if needed
-            # For simplicity in RAG, we just search across all transcripts
-            pass
-        except:
-            pass
-
-        # Perform the search across all transcripts
-        expanded_queries = expand_query(keywords)
-        results = []
-        for vid, transcript in transcripts_data.items():
-            try:
-                matches = search_transcript(transcript, expanded_queries, threshold=80)
-                if matches:
-                    results.append({
-                        "video_id": vid,
-                        "matches": matches
-                    })
-            except Exception:
-                continue
-                
-        # Sort results by best match score
-        for r in results:
-            r["max_score"] = max(m["score"] for m in r["matches"])
-        results.sort(key=lambda x: x["max_score"], reverse=True)
+        # We search the SQLite FTS database directly! Lightning fast.
+        results = search_sqlite_fts(keywords, limit=5)
         
-        # Take the top 5 matches to build context
-        top_matches = results[:5]
+        top_matches = results
         context_text = ""
         
         if top_matches:
@@ -458,14 +376,31 @@ def chat():
         # We only pass the last 5 messages to save tokens and context limit
         final_messages.extend(messages[-5:])
         
-        # Generate the final answer
-        answer = generate_completion(final_messages, temperature=0.7)
+        # Generate the final answer using streaming
+        answer_stream = generate_completion(final_messages, temperature=0.7, stream=True)
         
-        return jsonify({
-            "response": answer,
-            "context_used": top_matches,
-            "keywords_searched": keywords
-        }), 200
+        from flask import Response, stream_with_context
+        import json
+        
+        def generate():
+            # First yield the context used so frontend can display it
+            initial_data = {
+                "type": "context",
+                "context_used": top_matches,
+                "keywords_searched": keywords
+            }
+            yield f"data: {json.dumps(initial_data)}\n\n"
+            
+            # Then yield chunks of the answer
+            for chunk in answer_stream:
+                if chunk:
+                    chunk_data = {"type": "chunk", "content": chunk}
+                    yield f"data: {json.dumps(chunk_data)}\n\n"
+                    
+            # Finally send done
+            yield f"data: [DONE]\n\n"
+            
+        return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
     except Exception as e:
         logger.exception("Chat API Error")

@@ -258,6 +258,32 @@ def main():
             update_status(status)
             try:
                 db_manager.set_document("transcripts", vid, transcript)
+                
+                # Also save directly to local SQLite search.db
+                import sqlite3
+                from backend.config import Config
+                db_path = os.path.join(Config.CACHE_DIR, "search.db")
+                if os.path.exists(db_path):
+                    conn = sqlite3.connect(db_path)
+                    c = conn.cursor()
+                    for line in transcript:
+                        start_sec = line.get("start", 0)
+                        if start_sec > 100000: start_sec /= 1000.0
+                        
+                        h = int(start_sec // 3600)
+                        m = int((start_sec % 3600) // 60)
+                        s = int(start_sec % 60)
+                        timestamp = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
+                        
+                        c.execute(
+                            "INSERT INTO transcripts_fts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
+                            (vid, start_sec, timestamp, line.get("text", ""), line.get("norm_text", ""))
+                        )
+                    conn.commit()
+                    c.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES('optimize')")
+                    conn.commit()
+                    conn.close()
+
                 success += 1
                 status["success_count"] = success
                 status["progress_state"] = "success"
