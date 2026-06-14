@@ -27,9 +27,9 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
         if msg["role"] == "system":
             system_instruction += msg["content"] + "\n"
         elif msg["role"] == "user":
-            gemini_messages.append(types.Content(role="user", parts=[types.Part.from_text(msg["content"])]))
+            gemini_messages.append(types.Content(role="user", parts=[types.Part.from_text(text=msg["content"])]))
         elif msg["role"] == "assistant":
-            gemini_messages.append(types.Content(role="model", parts=[types.Part.from_text(msg["content"])]))
+            gemini_messages.append(types.Content(role="model", parts=[types.Part.from_text(text=msg["content"])]))
             
     try:
         config = types.GenerateContentConfig(
