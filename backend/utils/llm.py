@@ -6,7 +6,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=False):
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
     import os
     import logging
     
@@ -16,7 +17,7 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
     if not api_key:
         raise ValueError("GEMINI_API_KEY not found in environment variables.")
         
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     
     # Convert OpenAI message format to Gemini format
     system_instruction = ""
@@ -26,30 +27,33 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
         if msg["role"] == "system":
             system_instruction += msg["content"] + "\n"
         elif msg["role"] == "user":
-            gemini_messages.append({"role": "user", "parts": [msg["content"]]})
+            gemini_messages.append(types.Content(role="user", parts=[types.Part.from_text(msg["content"])]))
         elif msg["role"] == "assistant":
-            gemini_messages.append({"role": "model", "parts": [msg["content"]]})
+            gemini_messages.append(types.Content(role="model", parts=[types.Part.from_text(msg["content"])]))
             
-    generation_config = genai.types.GenerationConfig(
-        temperature=temperature,
-    )
-    
     try:
-        model_instance = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=system_instruction if system_instruction else None,
-            generation_config=generation_config
+        config = types.GenerateContentConfig(
+            temperature=temperature,
+            system_instruction=system_instruction if system_instruction else None
         )
         
         if stream:
-            response = model_instance.generate_content(gemini_messages, stream=True)
+            response = client.models.generate_content_stream(
+                model="gemini-1.5-flash",
+                contents=gemini_messages,
+                config=config
+            )
             def generate():
                 for chunk in response:
                     if chunk.text:
                         yield chunk.text
             return generate()
         else:
-            response = model_instance.generate_content(gemini_messages)
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=gemini_messages,
+                config=config
+            )
             return response.text
             
     except Exception as e:
