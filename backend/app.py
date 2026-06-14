@@ -406,9 +406,24 @@ def chat():
         except:
             pass
 
-        # Perform the search
+        # Perform the search across all transcripts
         expanded_queries = expand_query(keywords)
-        results = search_transcript(expanded_queries, transcripts_data, threshold=80)
+        results = []
+        for vid, transcript in transcripts_data.items():
+            try:
+                matches = search_transcript(transcript, expanded_queries, threshold=80)
+                if matches:
+                    results.append({
+                        "video_id": vid,
+                        "matches": matches
+                    })
+            except Exception:
+                continue
+                
+        # Sort results by best match score
+        for r in results:
+            r["max_score"] = max(m["score"] for m in r["matches"])
+        results.sort(key=lambda x: x["max_score"], reverse=True)
         
         # Take the top 5 matches to build context
         top_matches = results[:5]
