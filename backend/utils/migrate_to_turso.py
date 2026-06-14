@@ -89,6 +89,10 @@ async def migrate():
     print("Migration complete! Optimizing index...")
     await client.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES('optimize')")
     
+    print("Initializing transcribed_videos helper table...")
+    await client.execute("CREATE TABLE IF NOT EXISTS transcribed_videos (video_id TEXT PRIMARY KEY)")
+    await client.execute("INSERT OR IGNORE INTO transcribed_videos (video_id) SELECT DISTINCT video_id FROM transcripts_fts")
+    
     rs = await client.execute("SELECT COUNT(*) as count FROM transcripts_fts")
     final_count = rs.rows[0][0]
     print(f"Database build complete! Total rows: {final_count}")
