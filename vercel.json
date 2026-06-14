@@ -9,7 +9,6 @@
           "deno.exe",
           "venv/**",
           ".venv/**",
-          "backend/cache/**",
           "backend/logs/**",
           "frontend/node_modules/**",
           "frontend/dist/**",
