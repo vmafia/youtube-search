@@ -720,7 +720,7 @@ export function App() {
         </>
       ) : activeTab === "chat" ? (
         <div style={{ animation: "slideIn 0.25s ease-out" }}>
-          <ChatInterface />
+          <ChatInterface videos={videos} />
         </div>
       ) : (
         /* New Dashboard Panel */

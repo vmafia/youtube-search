@@ -17,9 +17,6 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
     api_key = os.environ.get("UNCLEDEV_API_KEY") or os.environ.get("OPENAI_API_KEY")
     
     if not api_key:
-        if stream:
-            yield '{"error": "API Key not found"}'
-            return
         raise ValueError("API Key not found. Please set UNCLEDEV_API_KEY or OPENAI_API_KEY.")
         
     headers = {

@@ -320,22 +320,15 @@ def chat():
         # Optional: Channel filter
         channel_name = data.get("channel_name", "").strip()
 
-        # Step 1: Extract keywords from the question using the LLM itself
-        # This is a simple trick to build RAG without a Vector DB!
-        keyword_prompt = [
-            {"role": "system", "content": "Extract 1 to 3 search keywords from the user's question to search a database of YouTube transcripts. Output ONLY the keywords separated by spaces. Do not output anything else. Example output: บาปใหญ่ นบีปลอม"},
-            {"role": "user", "content": last_message}
-        ]
-        
-        # We wrap this in a try-catch so if LLM fails, we just fallback to the original question as keyword
+        # Step 1: Extract keywords from the question
+        # To make it lightning fast, we just use the user's question directly,
+        # and remove common stopwords
         keywords = last_message
-        try:
-            extracted = generate_completion(keyword_prompt, temperature=0.1)
-            if extracted and len(extracted) < 50:
-                keywords = extracted.strip()
-        except Exception as e:
-            logger.warning(f"Keyword extraction failed, using original question: {e}")
-
+        stopwords = ["คือ", "อะไร", "ไหม", "ครับ", "ค่ะ", "ช่วยบอก", "หน่อย", "อยากรู้", "เรื่อง", "ว่า", "ยังไง", "บ้าง", "ทำไม", "?", "ในคลิป", "อาจารย์"]
+        for word in stopwords:
+            keywords = keywords.replace(word, " ")
+        keywords = " ".join(keywords.split())
+        
         # Step 2: Search transcripts
         logger.info(f"RAG searching for keywords: {keywords}")
         

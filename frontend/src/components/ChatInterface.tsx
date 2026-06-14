@@ -5,8 +5,25 @@ const API_BASE = import.meta.env.VITE_API_URL ||
     ? "http://localhost:5000"
     : "");
 
-export function ChatInterface() {
-  const [messages, setMessages] = useState<{role: 'user'|'assistant'|'system', content: string, context?: any[]}[]>(() => {
+interface Video {
+  id: string;
+  title: string;
+  published_at: string;
+  thumbnail: string;
+}
+
+interface Message {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  context?: any[];
+}
+
+interface ChatInterfaceProps {
+  videos?: Video[];
+}
+
+export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
+  const [messages, setMessages] = useState<Message[]>(() => {
     // Load from localStorage on mount
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("chat_history");
@@ -158,18 +175,34 @@ export function ChatInterface() {
               {msg.context && msg.context.length > 0 && (
                 <div className="chat-references">
                   <span className="ref-label">🔍 อ้างอิงจากคลิป:</span>
-                  <div className="ref-links">
-                    {msg.context.map((ref, idx) => (
-                      <a 
-                        key={idx} 
-                        href={`https://youtu.be/${ref.video_id}`} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="ref-link"
-                      >
-                        🎥 วิดีโอ {ref.video_id}
-                      </a>
-                    ))}
+                  <div className="ref-links" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {msg.context.map((ref, idx) => {
+                      const videoData = videos.find(v => v.id === ref.video_id);
+                      return (
+                        <a 
+                          key={idx} 
+                          href={`https://youtu.be/${ref.video_id}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="ref-link"
+                          style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', background: 'var(--bg2)', padding: '8px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                        >
+                          <img 
+                            src={videoData?.thumbnail || `https://i.ytimg.com/vi/${ref.video_id}/mqdefault.jpg`} 
+                            alt={videoData?.title || "Video thumbnail"} 
+                            style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px' }} 
+                          />
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ color: 'var(--t1)', fontWeight: 500, fontSize: '0.9rem', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                              {videoData?.title || `วิดีโอ ${ref.video_id}`}
+                            </span>
+                            <span style={{ color: 'var(--accent)', fontSize: '0.8rem' }}>
+                              ▶️ ดูคลิปเต็ม
+                            </span>
+                          </div>
+                        </a>
+                      );
+                    })}
                   </div>
                 </div>
               )}
