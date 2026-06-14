@@ -222,12 +222,23 @@ def search_transcript(transcript: List[Dict[str, Any]], query: Any, threshold: f
     transcript = check_and_convert_milliseconds(transcript)
     results = []
 
-    for item in transcript:
+    for i, item in enumerate(transcript):
         original_text = item.get("text", "")
-        norm_text = normalize_text(original_text)
-        
+        # Use precomputed norm_text if available, else compute on the fly
+        norm_text = item.get("norm_text")
+        if not norm_text:
+            norm_text = normalize_text(original_text)
+            
         if not norm_text:
             continue
+            
+        # To catch phrases split across subtitle lines, combine with next line
+        next_text = ""
+        if i + 1 < len(transcript):
+            next_item = transcript[i+1]
+            next_text = next_item.get("norm_text") or normalize_text(next_item.get("text", ""))
+                
+        searchable_text = norm_text + " " + next_text
             
         is_match = False
         match_type = None
@@ -239,18 +250,18 @@ def search_transcript(transcript: List[Dict[str, Any]], query: Any, threshold: f
                 continue
 
             # Prevent matching very short subtitle segments (like "ฮ") against long queries
-            if len(norm_text) < len(norm_query) * 0.6:
+            if len(searchable_text) < len(norm_query) * 0.6:
                 continue
 
             # 1. Exact Match / Substring Match (Case-Insensitive normalized)
-            if norm_query in norm_text:
+            if norm_query in searchable_text:
                 is_match = True
                 match_type = "exact" if norm_query == norm_text else "partial"
                 score = 100.0
                 break
             else:
                 # 2. Fuzzy Match using partial ratio
-                term_score = fuzz.partial_ratio(norm_query, norm_text)
+                term_score = fuzz.partial_ratio(norm_query, searchable_text)
                 if term_score >= threshold:
                     is_match = True
                     match_type = "fuzzy"
