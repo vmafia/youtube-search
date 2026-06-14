@@ -341,11 +341,26 @@ def chat():
         context_text = ""
         
         if top_matches:
+            # Prepare matches for batch context fetching (window of 30 seconds before/after)
+            context_items = []
+            for r in top_matches:
+                vid = r["video_id"]
+                for m in r["matches"][:2]:
+                    context_items.append({
+                        "video_id": vid,
+                        "start": m["start"],
+                        "text": m["text"]
+                    })
+            
+            from backend.utils.search_db import fetch_batch_surrounding_context
+            context_map = fetch_batch_surrounding_context(context_items, window_seconds=30)
+            
             context_text = "อ้างอิงจากข้อมูลซับไตเติ้ลในฐานข้อมูล:\n"
             for r in top_matches:
                 vid = r["video_id"]
-                for m in r["matches"][:2]: # take top 2 snippets per video
-                    context_text += f"- วิดีโอ {vid} (นาทีที่ {m['timestamp']}): \"{m['text']}\"\n"
+                for m in r["matches"][:2]:
+                    merged_text = context_map.get((vid, m["start"]), m["text"])
+                    context_text += f"- วิดีโอ {vid} (นาทีที่ {m['timestamp']}): \"{merged_text}\"\n"
         else:
             context_text = "ไม่มีข้อมูลในฐานข้อมูลที่ตรงกับคำถามนี้"
 

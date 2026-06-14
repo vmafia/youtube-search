@@ -167,3 +167,67 @@ def get_db_stats() -> Dict[str, Any]:
             "transcribed_count": 0,
             "transcribed_ids": []
         }
+
+def fetch_batch_surrounding_context(items: List[Dict[str, Any]], window_seconds: int = 30) -> Dict[tuple, str]:
+    """
+    items is a list of dicts containing 'video_id' and 'start'.
+    Returns a dict mapping (video_id, start) to the merged surrounding text.
+    """
+    if not items:
+        return {}
+        
+    try:
+        client = get_db_client()
+    except Exception as e:
+        logger.error(f"Cannot connect to Turso DB for batch context: {e}")
+        return {}
+        
+    # Build conditions
+    conditions = []
+    params = []
+    for item in items:
+        vid = item["video_id"]
+        start = item["start"]
+        lower = max(0, start - window_seconds)
+        upper = start + window_seconds
+        conditions.append("(video_id = ? AND start_time >= ? AND start_time <= ?)")
+        params.extend([vid, lower, upper])
+        
+    sql = f"""
+        SELECT video_id, start_time, text 
+        FROM transcripts_fts 
+        WHERE {" OR ".join(conditions)}
+        ORDER BY video_id, start_time
+    """
+    
+    result_map = {}
+    try:
+        rs = client.execute(sql, params)
+        # Group returned segments by video_id
+        grouped = {}
+        for row in rs.rows:
+            vid, start_time, text = row[0], row[1], row[2]
+            if vid not in grouped:
+                grouped[vid] = []
+            grouped[vid].append((start_time, text))
+            
+        # For each original item, find the segments that fall into its window
+        for item in items:
+            vid = item["video_id"]
+            start = item["start"]
+            lower = max(0, start - window_seconds)
+            upper = start + window_seconds
+            
+            # Filter and sort segments in the window
+            if vid in grouped:
+                segments_in_window = [text for start_time, text in grouped[vid] if lower <= start_time <= upper]
+                result_map[(vid, start)] = " ".join(segments_in_window)
+            else:
+                result_map[(vid, start)] = item.get("text", "")
+                
+        return result_map
+    except Exception as e:
+        logger.error(f"Error fetching batch surrounding context: {e}")
+        return {}
+    finally:
+        client.close()
