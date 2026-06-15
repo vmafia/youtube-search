@@ -10,6 +10,7 @@ load_dotenv()
 # We might not have libsql_client installed yet, so we import inside the function
 async def migrate():
     import libsql_client
+    from backend.utils.search import normalize_text
     
     db_url = os.environ.get("TURSO_DATABASE_URL")
     auth_token = os.environ.get("TURSO_AUTH_TOKEN")
@@ -17,11 +18,23 @@ async def migrate():
     if not db_url or not auth_token:
         print("Missing TURSO credentials in .env")
         return
-
+ 
     print("Connecting to Turso...")
     client = libsql_client.create_client(url=db_url, auth_token=auth_token)
     
-    print("Creating FTS5 table...")
+    print("Creating transcripts tables and indexes...")
+    await client.execute("""
+        CREATE TABLE IF NOT EXISTS transcripts (
+            video_id TEXT,
+            start_time REAL,
+            timestamp TEXT,
+            text TEXT,
+            norm_text TEXT
+        )
+    """)
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_video_start ON transcripts(video_id, start_time)")
+    await client.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_video_id ON transcripts(video_id)")
+
     await client.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS transcripts_fts 
         USING fts5(video_id UNINDEXED, start_time UNINDEXED, timestamp UNINDEXED, text, norm_text)
@@ -33,11 +46,23 @@ async def migrate():
     if count > 0:
         print(f"Table already has {count} rows. Dropping and recreating for a clean migration...")
         await client.execute("DROP TABLE transcripts_fts")
+        await client.execute("DROP TABLE transcripts")
+        await client.execute("""
+            CREATE TABLE IF NOT EXISTS transcripts (
+                video_id TEXT,
+                start_time REAL,
+                timestamp TEXT,
+                text TEXT,
+                norm_text TEXT
+            )
+        """)
+        await client.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_video_start ON transcripts(video_id, start_time)")
+        await client.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_video_id ON transcripts(video_id)")
         await client.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS transcripts_fts 
             USING fts5(video_id UNINDEXED, start_time UNINDEXED, timestamp UNINDEXED, text, norm_text)
         """)
-
+ 
     data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache", "all_transcripts.json.gz")
     if not os.path.exists(data_path):
         print(f"File not found: {data_path}")
@@ -50,8 +75,8 @@ async def migrate():
     total_videos = len(all_data)
     print(f"Found {total_videos} videos. Starting migration...")
     
-    # Batch size for inserts
-    BATCH_SIZE = 200
+    # Batch size for inserts (we insert in pairs, so limit statements to 200 per batch)
+    BATCH_SIZE = 100
     queries = []
     
     videos_processed = 0
@@ -67,12 +92,19 @@ async def migrate():
             s = int(start_sec % 60)
             timestamp = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
             
+            text_val = line.get("text", "")
+            norm_text_val = line.get("norm_text") or normalize_text(text_val)
+            
+            queries.append(libsql_client.Statement(
+                "INSERT INTO transcripts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
+                [vid, start_sec, timestamp, text_val, norm_text_val]
+            ))
             queries.append(libsql_client.Statement(
                 "INSERT INTO transcripts_fts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
-                [vid, start_sec, timestamp, line.get("text", ""), line.get("norm_text", "")]
+                [vid, start_sec, timestamp, text_val, norm_text_val]
             ))
             
-            if len(queries) >= BATCH_SIZE:
+            if len(queries) >= BATCH_SIZE * 2:
                 await client.batch(queries)
                 queries = []
                 await asyncio.sleep(0.1)
@@ -91,13 +123,15 @@ async def migrate():
     
     print("Initializing transcribed_videos helper table...")
     await client.execute("CREATE TABLE IF NOT EXISTS transcribed_videos (video_id TEXT PRIMARY KEY)")
-    await client.execute("INSERT OR IGNORE INTO transcribed_videos (video_id) SELECT DISTINCT video_id FROM transcripts_fts")
+    # Insert from standard table
+    await client.execute("INSERT OR IGNORE INTO transcribed_videos (video_id) SELECT DISTINCT video_id FROM transcripts")
     
-    rs = await client.execute("SELECT COUNT(*) as count FROM transcripts_fts")
+    rs = await client.execute("SELECT COUNT(*) as count FROM transcripts")
     final_count = rs.rows[0][0]
     print(f"Database build complete! Total rows: {final_count}")
     
     await client.close()
-
+ 
 if __name__ == "__main__":
     asyncio.run(migrate())
+

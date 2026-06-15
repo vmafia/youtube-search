@@ -46,16 +46,24 @@ def test_video_transcript_success(mock_fetch_transcript, client):
     assert response.json["video_id"] == "vid1"
     assert response.json["transcript"] == mock_transcript
 
-@patch.object(youtube_client.db_manager, 'get_document')
-def test_search_endpoint(mock_get_document, client):
-    mock_transcript = [
-        {"text": "สวัสดีครับพี่น้อง", "start": 1.0, "duration": 2.0},
-        {"text": "วันนี้เสนอเรื่องแนวทางที่ถูกต้อง", "start": 3.0, "duration": 3.0},
-        {"text": "Welcome to our class", "start": 6.0, "duration": 2.0}
-    ]
-    mock_get_document.return_value = mock_transcript
-
+@patch('backend.utils.search_db.search_sqlite_fts')
+def test_search_endpoint(mock_search_fts, client):
     # 1. Exact/Substring match (Thai)
+    mock_search_fts.return_value = [
+        {
+            "video_id": "vid1",
+            "max_score": 100.0,
+            "matches": [
+                {
+                    "timestamp": "0:03",
+                    "start": 3.0,
+                    "text": "วันนี้เสนอเรื่องแนวทางที่ถูกต้อง",
+                    "score": 100.0,
+                    "match_type": "exact"
+                }
+            ]
+        }
+    ]
     response = client.post("/api/search", json={"video_ids": ["vid1"], "query": "แนวทาง"})
     assert response.status_code == 200
     results = response.json["results"]
@@ -65,6 +73,21 @@ def test_search_endpoint(mock_get_document, client):
     assert "แนวทาง" in results[0]["matches"][0]["text"]
 
     # 2. Fuzzy match (English with typo)
+    mock_search_fts.return_value = [
+        {
+            "video_id": "vid1",
+            "max_score": 85.0,
+            "matches": [
+                {
+                    "timestamp": "0:06",
+                    "start": 6.0,
+                    "text": "Welcome to our class",
+                    "score": 85.0,
+                    "match_type": "fuzzy"
+                }
+            ]
+        }
+    ]
     response = client.post("/api/search", json={"video_ids": ["vid1"], "query": "welcom to clas"})
     assert response.status_code == 200
     results = response.json["results"]
@@ -72,6 +95,7 @@ def test_search_endpoint(mock_get_document, client):
     assert results[0]["matches"][0]["match_type"] == "fuzzy"
 
     # 3. No match
+    mock_search_fts.return_value = []
     response = client.post("/api/search", json={"video_ids": ["vid1"], "query": "something totally different"})
     assert response.status_code == 200
     assert len(response.json["results"]) == 0

@@ -12,6 +12,45 @@ from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, No
 import scrapetube
 from backend.config import Config
 
+# --- Compatibility monkeypatch for youtube_transcript_api >= 1.2.0 ---
+if not hasattr(YouTubeTranscriptApi, 'get_transcript'):
+    @classmethod
+    def get_transcript(cls, video_id, languages=('en',), cookies=None, proxies=None):
+        from youtube_transcript_api import ProxyConfig
+        proxy_config = ProxyConfig.from_requests_dict(proxies) if proxies else None
+        import requests
+        session = requests.Session()
+        if cookies:
+            import http.cookiejar
+            try:
+                cookie_jar = http.cookiejar.MozillaCookieJar(cookies)
+                cookie_jar.load(ignore_discard=True, ignore_expires=True)
+                session.cookies = cookie_jar
+            except Exception as e:
+                pass
+        api = cls(proxy_config=proxy_config, http_client=session)
+        return api.fetch(video_id, languages=languages)
+    YouTubeTranscriptApi.get_transcript = get_transcript
+
+if not hasattr(YouTubeTranscriptApi, 'list_transcripts'):
+    @classmethod
+    def list_transcripts(cls, video_id, cookies=None, proxies=None):
+        from youtube_transcript_api import ProxyConfig
+        proxy_config = ProxyConfig.from_requests_dict(proxies) if proxies else None
+        import requests
+        session = requests.Session()
+        if cookies:
+            import http.cookiejar
+            try:
+                cookie_jar = http.cookiejar.MozillaCookieJar(cookies)
+                cookie_jar.load(ignore_discard=True, ignore_expires=True)
+                session.cookies = cookie_jar
+            except Exception as e:
+                pass
+        api = cls(proxy_config=proxy_config, http_client=session)
+        return api.list(video_id)
+    YouTubeTranscriptApi.list_transcripts = list_transcripts
+
 logger = logging.getLogger(__name__)
 
 # Predefined metadata cache for @AssabiqoonPublisher to guarantee reliability
@@ -88,6 +127,62 @@ def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0):
     return decorator
 
 from backend.utils.db import DatabaseManager
+
+def save_transcript_to_sqlite(video_id: str, transcript: list):
+    try:
+        from backend.utils.search_db import get_db_client
+        from backend.utils.search import normalize_text
+        import libsql_client
+        
+        # Check if Turso credentials are present
+        db_url = os.environ.get("TURSO_DATABASE_URL")
+        auth_token = os.environ.get("TURSO_AUTH_TOKEN")
+        if not db_url or not auth_token:
+            logger.info("Turso credentials not configured. Skipping SQL sync.")
+            return
+            
+        client = get_db_client()
+        queries = []
+        
+        # Clear existing records for this video to prevent duplicates
+        queries.append(libsql_client.Statement("DELETE FROM transcripts WHERE video_id = ?", [video_id]))
+        queries.append(libsql_client.Statement("DELETE FROM transcripts_fts WHERE video_id = ?", [video_id]))
+        
+        for line in transcript:
+            start_sec = line.get("start", 0)
+            if start_sec > 100000: start_sec /= 1000.0
+            
+            h = int(start_sec // 3600)
+            m = int((start_sec % 3600) // 60)
+            s = int(start_sec % 60)
+            timestamp = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
+            
+            text_val = line.get("text", "")
+            # Compute norm_text dynamically
+            norm_text_val = line.get("norm_text") or normalize_text(text_val)
+            line["norm_text"] = norm_text_val
+            
+            queries.append(libsql_client.Statement(
+                "INSERT INTO transcripts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
+                [video_id, start_sec, timestamp, text_val, norm_text_val]
+            ))
+            queries.append(libsql_client.Statement(
+                "INSERT INTO transcripts_fts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
+                [video_id, start_sec, timestamp, text_val, norm_text_val]
+            ))
+            
+        # Add to transcribed_videos helper table
+        queries.append(libsql_client.Statement(
+            "INSERT OR IGNORE INTO transcribed_videos (video_id) VALUES (?)",
+            [video_id]
+        ))
+        
+        client.batch(queries)
+        client.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES('optimize')")
+        client.close()
+        logger.info(f"Successfully synced transcript for video {video_id} to Turso FTS & relational tables.")
+    except Exception as e:
+        logger.error(f"Failed to sync transcript for video {video_id} to Turso: {e}")
 
 class YouTubeClient:
     def __init__(self, api_key: Optional[str] = None, cache_dir: str = Config.CACHE_DIR):
@@ -432,6 +527,9 @@ class YouTubeClient:
                 raise ValueError(f"Transcript unavailable for video {video_id} (all strategies exhausted)")
 
         if transcript:
+            # Sync to Turso database (relational and FTS tables) and compute norm_text
+            save_transcript_to_sqlite(video_id, transcript)
+            
             self.db_manager.set_document("transcripts", video_id, transcript)
             return transcript
 

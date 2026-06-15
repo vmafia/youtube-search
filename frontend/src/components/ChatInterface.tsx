@@ -78,16 +78,21 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
       const decoder = new TextDecoder("utf-8");
       let done = false;
       let assistantText = "";
+      let buffer = "";
       
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
         if (value) {
-          const chunkStr = decoder.decode(value, { stream: true });
-          const lines = chunkStr.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          // The last element is either empty (ended in \n) or a partial line
+          buffer = lines.pop() || "";
+          
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const dataStr = line.slice(6).trim();
+            const trimmedLine = line.trim();
+            if (trimmedLine.startsWith('data: ')) {
+              const dataStr = trimmedLine.slice(6).trim();
               if (dataStr === '[DONE]') {
                 done = true;
                 break;

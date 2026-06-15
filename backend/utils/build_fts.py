@@ -48,6 +48,19 @@ def build_fts_db(cache_dir="backend/cache", db_path="backend/cache/search.db"):
         )
     """)
     
+    # 1.5. Create standard transcripts table with indexes
+    c.execute("""
+        CREATE TABLE transcripts (
+            video_id TEXT,
+            start_time REAL,
+            timestamp TEXT,
+            text TEXT,
+            norm_text TEXT
+        )
+    """)
+    c.execute("CREATE INDEX idx_transcripts_video_start ON transcripts(video_id, start_time)")
+    c.execute("CREATE INDEX idx_transcripts_video_id ON transcripts(video_id)")
+    
     # 2. Create FTS5 Virtual Table for Transcripts
     # Using unicode61 tokenizer to handle Thai characters decently
     c.execute("""
@@ -74,6 +87,7 @@ def build_fts_db(cache_dir="backend/cache", db_path="backend/cache/search.db"):
     
     # Load and insert transcripts
     logger.info("Loading and indexing transcripts. This might take a minute...")
+    from backend.utils.search import normalize_text
     with gzip.open(transcripts_path, 'rt', encoding='utf-8') as f:
         all_transcripts = json.load(f)
         
@@ -82,9 +96,16 @@ def build_fts_db(cache_dir="backend/cache", db_path="backend/cache/search.db"):
                 start_sec = check_and_convert_milliseconds(line.get("start", 0))
                 timestamp = format_timestamp(start_sec)
                 
+                text_val = line.get("text", "")
+                norm_text_val = line.get("norm_text") or normalize_text(text_val)
+                
+                c.execute(
+                    "INSERT INTO transcripts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
+                    (vid, start_sec, timestamp, text_val, norm_text_val)
+                )
                 c.execute(
                     "INSERT INTO transcripts_fts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
-                    (vid, start_sec, timestamp, line.get("text", ""), line.get("norm_text", ""))
+                    (vid, start_sec, timestamp, text_val, norm_text_val)
                 )
                 
     conn.commit()

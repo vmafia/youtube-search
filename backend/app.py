@@ -200,9 +200,7 @@ def search():
     logger.info(f"Search request: '{query}'. Expanded queries: {expanded_queries}")
 
     from backend.utils.search_db import search_sqlite_fts
-    # Use the first term for FTS5 (FTS5 handles multiple keywords easily)
-    search_term = " ".join(expanded_queries)
-    results = search_sqlite_fts(search_term, limit=50, video_ids=video_ids if video_ids else None)
+    results = search_sqlite_fts(expanded_queries, limit=50, video_ids=video_ids if video_ids else None)
 
     for r in results:
         r["thumbnail"] = f"https://img.youtube.com/vi/{r['video_id']}/mqdefault.jpg"
@@ -312,8 +310,23 @@ def chat():
         if not messages:
             return jsonify({"error": "Messages array is required"}), 400
             
+        # Sanitize messages list to prevent prompt injection and system instruction spoofing
+        sanitized_messages = []
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if not content or not isinstance(content, str):
+                continue
+            if role in ["user", "assistant"]:
+                sanitized_messages.append({"role": role, "content": content})
+            else:
+                logger.warning(f"Filtered out suspicious message with role '{role}' from chat request.")
+        
+        if not sanitized_messages:
+            return jsonify({"error": "Valid messages are required"}), 400
+            
         # Get the latest user question
-        last_message = next((m["content"] for m in reversed(messages) if m["role"] == "user"), None)
+        last_message = next((m["content"] for m in reversed(sanitized_messages) if m["role"] == "user"), None)
         if not last_message:
             return jsonify({"error": "No user message found"}), 400
 
@@ -336,6 +349,13 @@ def chat():
         
         # We search the SQLite FTS database directly! Lightning fast.
         results = search_sqlite_fts(keywords, limit=5)
+        
+        # If no results, retry by splitting keywords into individual words and OR-ing them
+        if not results:
+            words = [w for w in keywords.split() if len(w) > 1]
+            if words:
+                logger.info(f"RAG search with AND returned 0 results. Retrying with OR of words: {words}")
+                results = search_sqlite_fts(words, limit=5)
         
         top_matches = results
         context_text = ""
@@ -382,7 +402,7 @@ def chat():
         final_messages = [{"role": "system", "content": system_prompt}]
         
         # We only pass the last 5 messages to save tokens and context limit
-        final_messages.extend(messages[-5:])
+        final_messages.extend(sanitized_messages[-5:])
         
         # Generate the final answer using streaming
         answer_stream = generate_completion(final_messages, temperature=0.7, stream=True)

@@ -269,8 +269,36 @@ def main():
                 if db_url and auth_token:
                     try:
                         turso_client = libsql_client.create_client_sync(url=db_url, auth_token=auth_token)
+                        # Ensure tables exist
+                        turso_client.execute("CREATE TABLE IF NOT EXISTS transcribed_videos (video_id TEXT PRIMARY KEY)")
+                        turso_client.execute("""
+                            CREATE TABLE IF NOT EXISTS transcripts (
+                                video_id TEXT,
+                                start_time REAL,
+                                timestamp TEXT,
+                                text TEXT,
+                                norm_text TEXT
+                            )
+                        """)
+                        turso_client.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_video_start ON transcripts(video_id, start_time)")
+                        turso_client.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_video_id ON transcripts(video_id)")
+                        turso_client.execute("""
+                            CREATE VIRTUAL TABLE IF NOT EXISTS transcripts_fts USING fts5(
+                                video_id UNINDEXED,
+                                start_time UNINDEXED,
+                                timestamp UNINDEXED,
+                                text,
+                                norm_text
+                            )
+                        """)
                         
+                        from backend.utils.search import normalize_text
                         queries = []
+                        
+                        # Clear existing records for this video to prevent duplicates
+                        queries.append(libsql_client.Statement("DELETE FROM transcripts WHERE video_id = ?", [vid]))
+                        queries.append(libsql_client.Statement("DELETE FROM transcripts_fts WHERE video_id = ?", [vid]))
+                        
                         for line in transcript:
                             start_sec = line.get("start", 0)
                             if start_sec > 100000: start_sec /= 1000.0
@@ -280,11 +308,25 @@ def main():
                             s = int(start_sec % 60)
                             timestamp = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
                             
+                            text_val = line.get("text", "")
+                            norm_text_val = line.get("norm_text") or normalize_text(text_val)
+                            line["norm_text"] = norm_text_val
+                            
+                            queries.append(libsql_client.Statement(
+                                "INSERT INTO transcripts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
+                                [vid, start_sec, timestamp, text_val, norm_text_val]
+                            ))
                             queries.append(libsql_client.Statement(
                                 "INSERT INTO transcripts_fts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
-                                [vid, start_sec, timestamp, line.get("text", ""), line.get("norm_text", "")]
+                                [vid, start_sec, timestamp, text_val, norm_text_val]
                             ))
                             
+                        # Record video ID in helper table
+                        queries.append(libsql_client.Statement(
+                            "INSERT OR IGNORE INTO transcribed_videos (video_id) VALUES (?)",
+                            [vid]
+                        ))
+                        
                         if queries:
                             turso_client.batch(queries)
                             turso_client.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES('optimize')")

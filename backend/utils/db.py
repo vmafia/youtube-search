@@ -34,9 +34,10 @@ class DatabaseManager:
                     cred_dict = json.loads(firebase_json)
                     cred = credentials.Certificate(cred_dict)
                 
-                firebase_admin.initialize_app(cred, {
-                    'projectId': project_id
-                })
+                if not firebase_admin._apps:
+                    firebase_admin.initialize_app(cred, {
+                        'projectId': project_id
+                    })
                 self.db = firestore.client()
                 self.use_firebase = True
                 logger.info("Successfully initialized Firebase Firestore")

@@ -15,6 +15,9 @@ def normalize_text(text: str) -> str:
     """
     text = text.lower().strip()
     
+    # Strip silent ending consonants representing Arabic breath (หฺ, ฮฺ, ห์, ฮ์) before stripping tone/silent marks:
+    text = re.sub(r"[หฮ][์ฺ]", "", text)
+    
     # Strip common Thai tone marks, silent marks, and vocalization aids:
     # ่ (่), ้ (้), ๊ (๊), ๋ (๋), ์ (การันต์), ฺ (พินทุ), ํ (นิคหิต), ๎ (ยามักการ), ็ (ไม้ไต่คู้)
     text = re.sub(r"[\u0e48-\u0e4b\u0e4c\u0e3a\u0e4d\u0e4e\u0e47]", "", text)

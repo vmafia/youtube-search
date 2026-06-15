@@ -28,13 +28,20 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
     system_instruction = ""
     gemini_messages = []
     
-    for msg in messages:
-        if msg["role"] == "system":
-            system_instruction += msg["content"] + "\n"
-        elif msg["role"] == "user":
-            gemini_messages.append(types.Content(role="user", parts=[types.Part.from_text(text=msg["content"])]))
-        elif msg["role"] == "assistant":
-            gemini_messages.append(types.Content(role="model", parts=[types.Part.from_text(text=msg["content"])]))
+    # Defense-in-depth: Only allow the first message to be 'system' (constructed by backend)
+    # and strip any subsequent system messages.
+    for i, msg in enumerate(messages):
+        role = msg.get("role")
+        content = msg.get("content", "")
+        if role == "system":
+            if i == 0:
+                system_instruction += content + "\n"
+            else:
+                logger.warning("Dropped unexpected system message in generate_completion history.")
+        elif role == "user":
+            gemini_messages.append(types.Content(role="user", parts=[types.Part.from_text(text=content)]))
+        elif role == "assistant" or role == "model":
+            gemini_messages.append(types.Content(role="model", parts=[types.Part.from_text(text=content)]))
             
     try:
         config = types.GenerateContentConfig(
