@@ -54,27 +54,66 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
     try:
         config = types.GenerateContentConfig(
             temperature=temperature,
-            system_instruction=system_instruction if system_instruction else None
+            system_instruction=system_instruction if system_instruction else None,
+            safety_settings=[
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                ),
+            ]
         )
         
+        models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+        
         if stream:
-            response = client.models.generate_content_stream(
-                model="gemini-2.5-flash",
-                contents=gemini_messages,
-                config=config
-            )
-            def generate():
-                for chunk in response:
-                    if chunk.text:
-                        yield chunk.text
-            return generate()
+            def generate_with_fallback():
+                for i, model_name in enumerate(models_to_try):
+                    chunks_yielded = 0
+                    try:
+                        response = client.models.generate_content_stream(
+                            model=model_name,
+                            contents=gemini_messages,
+                            config=config
+                        )
+                        for chunk in response:
+                            if chunk.text:
+                                yield chunk.text
+                                chunks_yielded += 1
+                        break # Success
+                    except Exception as e:
+                        logger.warning(f"Model {model_name} failed: {e}")
+                        if chunks_yielded > 0:
+                            raise Exception(f"Stream interrupted midway: {str(e)}")
+                        if i == len(models_to_try) - 1:
+                            raise
+                        continue
+            return generate_with_fallback()
         else:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=gemini_messages,
-                config=config
-            )
-            return response.text
+            for i, model_name in enumerate(models_to_try):
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=gemini_messages,
+                        config=config
+                    )
+                    return response.text
+                except Exception as e:
+                    logger.warning(f"Model {model_name} failed: {e}")
+                    if i == len(models_to_try) - 1:
+                        raise
+                    continue
             
     except Exception as e:
         logger.error(f"Gemini API Error: {str(e)}")

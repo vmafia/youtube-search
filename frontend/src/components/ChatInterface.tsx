@@ -120,6 +120,19 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
           }
         }
       }
+
+      // If the stream ended (e.g. Vercel timeout) and no text was received at all
+      if (!assistantText) {
+        setMessages(prev => {
+          const newMsgs = [...prev];
+          const lastMsg = newMsgs[newMsgs.length - 1];
+          // Only show error if we haven't already shown a stream error
+          if (!lastMsg.content) {
+            lastMsg.content = "[ระบบขัดข้อง: เซิร์ฟเวอร์ใช้เวลาตอบกลับนานเกินไป (Timeout) หรือ AI ขัดข้อง กรุณาลองถามใหม่อีกครั้ง]";
+          }
+          return newMsgs;
+        });
+      }
       
     } catch (err: any) {
       setMessages(prev => {

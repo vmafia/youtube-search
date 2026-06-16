@@ -436,14 +436,19 @@ def chat():
                 "context_used": top_matches,
                 "keywords_searched": keywords
             }
-            yield f"data: {json.dumps(initial_data)}\n\n"
+            yield f"data: {json.dumps(initial_data, ensure_ascii=False)}\n\n"
             
-            # Then yield chunks of the answer
-            for chunk in answer_stream:
-                if chunk:
-                    chunk_data = {"type": "chunk", "content": chunk}
-                    yield f"data: {json.dumps(chunk_data)}\n\n"
-                    
+            try:
+                # Then yield chunks of the answer
+                for chunk in answer_stream:
+                    if chunk:
+                        chunk_data = {"type": "chunk", "content": chunk}
+                        yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                logger.error(f"Stream error: {e}")
+                err_data = {"type": "chunk", "content": f"\n\n[ระบบขัดข้อง: เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ AI หรือถูกบล็อกโดย Safety Filter: {str(e)}]"}
+                yield f"data: {json.dumps(err_data, ensure_ascii=False)}\n\n"
+                
             # Finally send done
             yield f"data: [DONE]\n\n"
             
