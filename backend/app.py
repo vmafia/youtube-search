@@ -446,7 +446,7 @@ def chat():
                         yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
             except Exception as e:
                 logger.error(f"Stream error: {e}")
-                err_data = {"type": "chunk", "content": f"\n\n[ระบบขัดข้อง: เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ AI หรือถูกบล็อกโดย Safety Filter: {str(e)}]"}
+                err_data = {"type": "chunk", "content": f"\n\n[ระบบขัดข้อง: เซิร์ฟเวอร์ AI ล่มหรือโควต้าเต็ม กรุณาลองใหม่อีกครั้ง: {str(e)}]"}
                 yield f"data: {json.dumps(err_data, ensure_ascii=False)}\n\n"
                 
             # Finally send done

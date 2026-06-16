@@ -119,6 +119,8 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
             }
           }
         }
+        
+        if (done) break;
       }
 
       // If the stream ended (e.g. Vercel timeout) and no text was received at all
