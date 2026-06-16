@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { AiMascot } from './AiMascot';
 
 const API_BASE = import.meta.env.VITE_API_URL || 
   (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
@@ -337,12 +338,8 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
         
         <div className="chat-messages" style={{ flex: 1, overflowY: 'auto' }}>
           {messages.length === 1 && messages[0].role === 'assistant' && (
-            <div className="chat-empty">
-              <div className="chat-empty-icon" style={{ fontSize: '3rem', marginBottom: '1rem' }}>🤖</div>
-              <h3 style={{ marginBottom: '0.5rem' }}>AI ถาม-ตอบจากคลิป</h3>
-              <p style={{ color: 'var(--t2)', fontSize: '0.95rem' }}>
-                พิมพ์คำถามเกี่ยวกับเนื้อหาในวิดีโอ เช่น "อาจารย์พูดถึงเรื่องนบีปลอมว่ายังไงบ้าง?"
-              </p>
+            <div className="chat-empty" style={{ marginTop: 'auto', marginBottom: 'auto' }}>
+              <AiMascot state="idle" message="สวัสดีครับ! ผมคือผู้ช่วย AI ถามเรื่องศาสนามาได้เลยครับ" />
             </div>
           )}
           
@@ -352,9 +349,11 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
                 {msg.role === 'user' ? '🧑‍💻' : (msg.role === 'assistant' ? '🤖' : '⚠️')}
               </div>
               <div className="chat-message-content">
-                <div className="chat-bubble" style={{ whiteSpace: 'pre-wrap' }}>
+                <div className="chat-bubble" style={{ whiteSpace: 'pre-wrap', padding: msg.content === '' || msg.content.startsWith('⏳') ? '0' : '1rem 1.25rem', background: msg.content === '' || msg.content.startsWith('⏳') ? 'transparent' : undefined, border: msg.content === '' || msg.content.startsWith('⏳') ? 'none' : undefined }}>
                   {msg.content === '' ? (
-                    <span style={{ fontStyle: 'italic', color: '#888' }}>กำลังประมวลผล...</span>
+                    <AiMascot state="thinking" message="กำลังวิเคราะห์เนื้อหาเชิงลึก..." />
+                  ) : msg.content.startsWith('⏳') ? (
+                    <AiMascot state="searching" message={msg.content.replace('⏳', '').trim()} />
                   ) : (
                     msg.content
                   )}
