@@ -373,7 +373,8 @@ export function App() {
   );
 
   return (
-    <div className="container">
+    <div className="app dark">
+      <main>
       {/* Toast container */}
       <div className="toast-container">
         {toasts.map((toast) => (
@@ -390,7 +391,7 @@ export function App() {
       </header>
 
       {/* Tabs */}
-      <div className="tabs-nav">
+      <div className="member-tabs">
         <button
           type="button"
           className={`tab-btn ${activeTab === "search" ? "active" : ""}`}
@@ -426,7 +427,7 @@ export function App() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              <button type="submit" className="btn btn-primary" disabled={loading}>
+              <button type="submit" className="btn btn-main" disabled={loading}>
                 {loading ? "กำลังค้นหา..." : "ค้นหา"}
               </button>
             </form>
@@ -494,7 +495,7 @@ export function App() {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-secondary"
+                      className="btn btn-outline"
                       style={{ height: "38px", padding: "0 1rem" }}
                       onClick={() => fetchVideos(channelName)}
                       disabled={loading}
@@ -553,7 +554,7 @@ export function App() {
                                 className={`video-card ${isSelected ? "selected" : ""}`}
                                 onClick={() => toggleVideoSelection(video.id)}
                               >
-                                <div className="video-card-checkbox-wrapper">
+                                <div className="card card video-card-checkbox-wrapper">
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
@@ -563,11 +564,11 @@ export function App() {
                                 <img
                                   src={video.thumbnail}
                                   alt={video.title}
-                                  className="video-card-thumbnail"
+                                  className="card card video-card-thumbnail"
                                 />
-                                <div className="video-card-info">
-                                  <span className="video-card-title">{video.title}</span>
-                                  <span className="video-card-date">{video.published_at}</span>
+                                <div className="card card video-card-info">
+                                  <span className="card card video-card-title">{video.title}</span>
+                                  <span className="card card video-card-date">{video.published_at}</span>
                                 </div>
                               </div>
                             );
@@ -616,24 +617,24 @@ export function App() {
               const isTranscriptMissing = (result as any).transcript_missing;
 
               return (
-                <div key={result.video_id} className="result-card">
-                  <div className="result-card-header">
+                <div key={result.video_id} className="card card result-card">
+                  <div className="card card result-card-header">
                     {thumbnail && (
                       <img
                         src={thumbnail}
                         alt={title}
-                        className="result-card-thumbnail"
+                        className="card card result-card-thumbnail"
                       />
                     )}
-                    <div className="result-card-info">
-                      <h3 className="result-card-title">
+                    <div className="card card result-card-info">
+                      <h3 className="card card result-card-title">
                         {title}
                       </h3>
-                      <div className="result-card-actions">
+                      <div className="card card result-card-actions">
                         {!isTranscriptMissing && (
                           <button
                             type="button"
-                            className="result-card-btn"
+                            className="card card result-card-btn"
                             onClick={() => fetchFullTranscript(result.video_id)}
                           >
                             📖 ดูคำแปล/สคริปต์เต็ม
@@ -643,7 +644,7 @@ export function App() {
                           href={`https://youtu.be/${result.video_id}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="result-card-btn"
+                          className="card card result-card-btn"
                           style={{ textDecoration: "none" }}
                         >
                           🔗 เปิดใน YouTube
@@ -798,18 +799,18 @@ export function App() {
           )}
 
           {/* Dashboard Stats */}
-          <div className="dashboard-grid">
-            <div className="stat-card">
+          <div className="grid3">
+            <div className="card card stat-card">
               <span className="stat-label">วิดีโอทั้งหมด</span>
               <span className="stat-value">{videos.length} คลิป</span>
             </div>
-            <div className="stat-card">
+            <div className="card card stat-card">
               <span className="stat-label">มีสคริปต์พร้อมค้นหาแล้ว</span>
               <span className="stat-value" style={{ color: "var(--success)" }}>
                 {statsLoading ? "..." : `${stats?.transcribed_count || 0} คลิป`}
               </span>
             </div>
-            <div className="stat-card">
+            <div className="card card stat-card">
               <span className="stat-label">รอคิวแกะเสียง</span>
               <span className="stat-value" style={{ color: "#f59e0b" }}>
                 {statsLoading ? "..." : `${videos.length > 0 && stats ? Math.max(0, videos.length - stats.transcribed_count) : 0} คลิป`}
@@ -848,7 +849,7 @@ export function App() {
           </div>
 
           {/* Video List Card */}
-          <div className="dashboard-list-card">
+          <div className="card card dashboard-list-card">
             <div className="dashboard-list-header">
               <h3 style={{ fontSize: "1rem", fontWeight: "600", color: "var(--text)" }}>รายการวิดีโอและสถานะสคริปต์</h3>
               <input
@@ -862,24 +863,24 @@ export function App() {
             </div>
 
             {/* Filter Pills */}
-            <div className="filter-pills-row">
+            <div className="pills-row">
               <button 
                 type="button" 
-                className={`filter-pill ${filterType === "all" ? "active" : ""}`}
+                className={`pill ${filterType === "all" ? "active" : ""}`}
                 onClick={() => setFilterType("all")}
               >
                 ทั้งหมด ({videos.length})
               </button>
               <button 
                 type="button" 
-                className={`filter-pill ${filterType === "transcribed" ? "active" : ""}`}
+                className={`pill ${filterType === "transcribed" ? "active" : ""}`}
                 onClick={() => setFilterType("transcribed")}
               >
                 ✓ มีสคริปต์แล้ว ({stats?.transcribed_count || 0})
               </button>
               <button 
                 type="button" 
-                className={`filter-pill ${filterType === "pending" ? "active" : ""}`}
+                className={`pill ${filterType === "pending" ? "active" : ""}`}
                 onClick={() => setFilterType("pending")}
               >
                 ⏳ รอคิวแกะเสียง ({stats?.no_subtitle_count || 0})
@@ -926,7 +927,7 @@ export function App() {
                         {isTranscribed ? (
                           <button
                             type="button"
-                            className="result-card-btn"
+                            className="card card result-card-btn"
                             onClick={() => fetchFullTranscript(video.id)}
                           >
                             📖 ดูสคริปต์
@@ -938,7 +939,7 @@ export function App() {
                         ) : (
                           <button
                             type="button"
-                            className="result-card-btn"
+                            className="card card result-card-btn"
                             disabled
                             style={{ cursor: "not-allowed", opacity: 0.5 }}
                           >
@@ -961,7 +962,7 @@ export function App() {
             <div className="modal-header">
               <h3 style={{ fontSize: "1.1rem", fontWeight: "600" }}>สคริปต์วิดีโอฉบับเต็ม</h3>
               <button
-                className="btn btn-secondary"
+                className="btn btn-outline"
                 style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}
                 onClick={() => setActiveTranscriptVideoId(null)}
               >
@@ -993,6 +994,7 @@ export function App() {
           </div>
         </div>
       )}
+      </main>
     </div>
   );
 }
