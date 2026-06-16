@@ -45,6 +45,11 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
                 gemini_messages[-1].parts[0].text += "\n\n" + content
             else:
                 gemini_messages.append(types.Content(role=gemini_role, parts=[types.Part.from_text(text=content)]))
+                
+    # Gemini requires the conversation to START with a user message.
+    # If due to truncation or history the first message is 'model', drop it.
+    while gemini_messages and gemini_messages[0].role == "model":
+        gemini_messages.pop(0)
             
     try:
         config = types.GenerateContentConfig(
