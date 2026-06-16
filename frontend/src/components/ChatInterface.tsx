@@ -138,8 +138,8 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
     if (e) e.preventDefault();
     if (!input.trim() || loading) return;
 
-    const userMessage = { role: 'user' as const, content: input.trim() };
-    const currentMessages = [...messages, userMessage];
+    const userMessage: Message = { role: 'user', content: input.trim() };
+    const currentMessages: Message[] = [...messages, userMessage];
     
     // Auto-title if it's a new chat
     let newTitle = activeSession.title;
@@ -152,7 +152,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
     setLoading(true);
     
     // Add empty assistant message
-    const msgsWithLoading = [...currentMessages, { role: 'assistant' as const, content: '' }];
+    const msgsWithLoading: Message[] = [...currentMessages, { role: 'assistant', content: '' }];
     updateActiveSession(msgsWithLoading);
 
     try {
