@@ -128,19 +128,41 @@ def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0):
 
 from backend.utils.db import DatabaseManager
 
+def generate_embeddings_gemini(texts: List[str], api_key: str) -> List[List[float]]:
+    """Generates embeddings for a batch of texts using Gemini API."""
+    if not api_key or not texts:
+        return []
+        
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    
+    requests_data = []
+    for text in texts:
+        requests_data.append({
+            "model": "models/text-embedding-004",
+            "content": {
+                "parts": [{"text": text}]
+            }
+        })
+        
+    try:
+        r = requests.post(url, headers=headers, json={"requests": requests_data}, timeout=10)
+        if r.status_code == 200:
+            res_data = r.json()
+            return [emb["values"] for emb in res_data.get("embeddings", [])]
+        else:
+            logger.warning(f"Gemini embedding batch failed with status code {r.status_code}: {r.text}")
+    except Exception as e:
+        logger.error(f"Error calling Gemini batch embeddings: {e}")
+        
+    return []
+
 def save_transcript_to_sqlite(video_id: str, transcript: list):
     try:
         from backend.utils.search_db import get_db_client
         from backend.utils.search import normalize_text
         import libsql_client
         
-        # Check if Turso credentials are present
-        db_url = os.environ.get("TURSO_DATABASE_URL")
-        auth_token = os.environ.get("TURSO_AUTH_TOKEN")
-        if not db_url or not auth_token:
-            logger.info("Turso credentials not configured. Skipping SQL sync.")
-            return
-            
         client = get_db_client()
         queries = []
         
@@ -148,29 +170,89 @@ def save_transcript_to_sqlite(video_id: str, transcript: list):
         queries.append(libsql_client.Statement("DELETE FROM transcripts WHERE video_id = ?", [video_id]))
         queries.append(libsql_client.Statement("DELETE FROM transcripts_fts WHERE video_id = ?", [video_id]))
         
-        for line in transcript:
-            start_sec = line.get("start", 0)
-            if start_sec > 100000: start_sec /= 1000.0
+        # Clear existing embeddings if vector table exists
+        try:
+            client.execute("DELETE FROM transcript_embeddings WHERE video_id = ?", [video_id])
+        except Exception:
+            pass
             
-            h = int(start_sec // 3600)
-            m = int((start_sec % 3600) // 60)
-            s = int(start_sec % 60)
-            timestamp = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
+        # Chunk transcripts into batches of 50 to optimize insertions (Multi-row Insert)
+        batch_size = 50
+        for i in range(0, len(transcript), batch_size):
+            chunk = transcript[i:i+batch_size]
             
-            text_val = line.get("text", "")
-            # Compute norm_text dynamically
-            norm_text_val = line.get("norm_text") or normalize_text(text_val)
-            line["norm_text"] = norm_text_val
+            # Construct multi-row insert for transcripts and FTS table
+            sql_transcripts = "INSERT INTO transcripts (video_id, start_time, timestamp, text, norm_text, speaker) VALUES "
+            sql_fts = "INSERT INTO transcripts_fts (video_id, start_time, timestamp, text, norm_text) VALUES "
             
-            queries.append(libsql_client.Statement(
-                "INSERT INTO transcripts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
-                [video_id, start_sec, timestamp, text_val, norm_text_val]
-            ))
-            queries.append(libsql_client.Statement(
-                "INSERT INTO transcripts_fts (video_id, start_time, timestamp, text, norm_text) VALUES (?, ?, ?, ?, ?)",
-                [video_id, start_sec, timestamp, text_val, norm_text_val]
-            ))
+            placeholders_transcripts = []
+            placeholders_fts = []
+            params_transcripts = []
+            params_fts = []
             
+            for line in chunk:
+                start_sec = line.get("start", 0)
+                if start_sec > 100000: start_sec /= 1000.0
+                
+                h = int(start_sec // 3600)
+                m = int((start_sec % 3600) // 60)
+                s = int(start_sec % 60)
+                timestamp = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
+                
+                text_val = line.get("text", "")
+                norm_text_val = line.get("norm_text") or normalize_text(text_val)
+                line["norm_text"] = norm_text_val
+                speaker_val = line.get("speaker") or None
+                
+                placeholders_transcripts.append("(?, ?, ?, ?, ?, ?)")
+                params_transcripts.extend([video_id, start_sec, timestamp, text_val, norm_text_val, speaker_val])
+                
+                placeholders_fts.append("(?, ?, ?, ?, ?)")
+                params_fts.extend([video_id, start_sec, timestamp, text_val, norm_text_val])
+                
+            sql_transcripts += ", ".join(placeholders_transcripts)
+            sql_fts += ", ".join(placeholders_fts)
+            
+            queries.append(libsql_client.Statement(sql_transcripts, params_transcripts))
+            queries.append(libsql_client.Statement(sql_fts, params_fts))
+            
+        # Generate and save embeddings if Gemini API key and remote Turso are active
+        gemini_api_key = Config.GEMINI_API_KEY
+        if gemini_api_key and db_url and "turso.io" in db_url:
+            try:
+                # Chunk transcript into batches of 100 to call Gemini batch embeddings
+                texts_to_embed = [line.get("text", "") for line in transcript]
+                embeddings = []
+                emb_batch_size = 100
+                for j in range(0, len(texts_to_embed), emb_batch_size):
+                    batch_texts = texts_to_embed[j:j+emb_batch_size]
+                    batch_embs = generate_embeddings_gemini(batch_texts, gemini_api_key)
+                    embeddings.extend(batch_embs)
+                    
+                if len(embeddings) == len(transcript):
+                    for j in range(0, len(transcript), batch_size):
+                        chunk = transcript[j:j+batch_size]
+                        chunk_embs = embeddings[j:j+batch_size]
+                        
+                        sql_embs = "INSERT INTO transcript_embeddings (video_id, start_time, embedding) VALUES "
+                        placeholders_embs = []
+                        params_embs = []
+                        
+                        for idx, line in enumerate(chunk):
+                            start_sec = line.get("start", 0)
+                            if start_sec > 100000: start_sec /= 1000.0
+                            
+                            emb_val = chunk_embs[idx]
+                            placeholders_embs.append("(?, ?, vector(?))")
+                            params_embs.extend([video_id, start_sec, json.dumps(emb_val)])
+                            
+                        sql_embs += ", ".join(placeholders_embs)
+                        queries.append(libsql_client.Statement(sql_embs, params_embs))
+                else:
+                    logger.warning(f"Embedding count mismatch for video {video_id}: got {len(embeddings)}, expected {len(transcript)}")
+            except Exception as ee:
+                logger.error(f"Failed to generate/save embeddings for video {video_id}: {ee}")
+                
         # Add to transcribed_videos helper table
         queries.append(libsql_client.Statement(
             "INSERT OR IGNORE INTO transcribed_videos (video_id) VALUES (?)",

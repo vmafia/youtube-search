@@ -14,7 +14,8 @@ interface Match {
   end: number;
   timestamp: string;
   score: number;
-  match_type: "exact" | "partial" | "fuzzy" | "estimated";
+  match_type: "exact" | "partial" | "fuzzy" | "estimated" | "semantic";
+  speaker?: string;
 }
 
 interface SearchResult {
@@ -73,8 +74,28 @@ export function App() {
 
   // Detailed transcript viewer state
   const [activeTranscriptVideoId, setActiveTranscriptVideoId] = useState<string | null>(null);
-  const [fullTranscript, setFullTranscript] = useState<{ text: string; start: number; timestamp: string }[]>([]);
+  const [fullTranscript, setFullTranscript] = useState<{ text: string; start: number; timestamp: string; speaker?: string }[]>([]);
   const [transcriptLoading, setTranscriptLoading] = useState<boolean>(false);
+
+  // Bookmark state
+  interface Bookmark {
+    video_id: string;
+    video_title: string;
+    text: string;
+    start: number;
+    timestamp: string;
+    bookmarked_at: number;
+  }
+  const [bookmarks, setBookmarks] = useLocalStorage<Bookmark[]>("starred_bookmarks", []);
+
+  // Sync Progress State
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+
+  // Highlighting State
+  const [highlightedStart, setHighlightedStart] = useState<number | null>(null);
+
+  // Video Summary state
+  const [videoSummaries, setVideoSummaries] = useState<Record<string, { summary?: string; loading?: boolean; error?: string }>>({});
 
   // Tab and Dashboard state
   interface StatsData {
@@ -93,7 +114,7 @@ export function App() {
     fail_count: number;
     last_updated: number;
   }
-  const [activeTab, setActiveTab] = useState<"search" | "dashboard" | "chat">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "dashboard" | "chat" | "bookmarks">("search");
   const [stats, setStats] = useState<StatsData | null>(null);
   const [statsLoading, setStatsLoading] = useState<boolean>(false);
   const [dashboardSearchText, setDashboardSearchText] = useState<string>("");
@@ -247,31 +268,58 @@ export function App() {
       addToast("ไม่พบวิดีโอ กรุณาโหลดช่อง YouTube ก่อน", "error");
       return;
     }
-    if (!confirm("ต้องการดูด CC ภาษาไทยจากคลิปทั้งหมดลงฐานข้อมูลหรือไม่?\nระบบจะใช้เวลาครู่หนึ่ง และจะข้ามคลิปที่มีในระบบแล้วอัตโนมัติ")) {
+    
+    const transcribedSet = new Set(stats?.transcribed_ids || []);
+    const pendingVideos = videos.filter(v => !transcribedSet.has(v.id));
+    
+    if (pendingVideos.length === 0) {
+      addToast("วิดีโอทั้งหมดมีสคริปต์ในระบบเรียบร้อยแล้ว", "success");
+      return;
+    }
+    
+    if (!confirm(`ต้องการดึง CC ภาษาไทยสำหรับคลิปที่ยังไม่มีสคริปต์จำนวน ${pendingVideos.length} คลิปหรือไม่?\nระบบจะทยอยดึงเป็นชุดละ 8 คลิป เพื่อความปลอดภัยในการทำงานของคลาวด์`)) {
       return;
     }
     
     setLoading(true);
-    addToast("กำลังดึงข้อมูล CC... กรุณารอสักครู่ (อาจใช้เวลาหลายวินาที)", "success");
+    setSyncProgress({ current: 0, total: pendingVideos.length });
+    addToast(`เริ่มการดูดข้อมูลสคริปต์ ${pendingVideos.length} คลิป...`, "success");
+    
+    let successCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+    const batchSize = 8;
     
     try {
-      const response = await fetch(`${API_BASE}/api/bulk-sync-cc`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ video_ids: videos.map((v) => v.id) }),
-      });
-      
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || "เกิดข้อผิดพลาดในการดูด CC");
+      for (let i = 0; i < pendingVideos.length; i += batchSize) {
+        const batch = pendingVideos.slice(i, i + batchSize);
+        const batchIds = batch.map(v => v.id);
+        
+        setSyncProgress({ current: i, total: pendingVideos.length });
+        
+        const response = await fetch(`${API_BASE}/api/bulk-sync-cc`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ video_ids: batchIds }),
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          successCount += data.success || 0;
+          failedCount += data.failed || 0;
+          skippedCount += data.skipped || 0;
+        } else {
+          failedCount += batchIds.length;
+        }
       }
       
-      addToast(`🎉 ดูดสำเร็จ ${data.success} คลิป! (ข้าม ${data.skipped} คลิปที่มีแล้ว, ล้มเหลว/ไม่มี CC ${data.failed} คลิป)`, "success");
+      addToast(`🎉 ดึงข้อมูลสคริปต์สำเร็จ ${successCount} คลิป! (ข้าม ${skippedCount}, ล้มเหลว ${failedCount})`, "success");
       fetchStats(); // Update stats after sync
     } catch (err: any) {
-      addToast(err.message, "error");
+      addToast(err.message || "การดูดข้อมูลสคริปต์ขาดตอน", "error");
     } finally {
       setLoading(false);
+      setSyncProgress(null);
     }
   };
 
@@ -290,12 +338,15 @@ export function App() {
 
     setLoading(true);
     setError(null);
+
+    const isSearchAll = selectedVideoIds.length === videos.length;
+
     try {
       const response = await fetch(`${API_BASE}/api/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          video_ids: selectedVideoIds,
+          video_ids: isSearchAll ? [] : selectedVideoIds,
           query: queryToUse.trim(),
           threshold: threshold,
           channel_name: channelName.trim(),
@@ -345,16 +396,73 @@ export function App() {
     );
   };
 
+  const toggleBookmark = (video_id: string, video_title: string, text: string, start: number, timestamp: string) => {
+    const isBookmarked = bookmarks.some(b => b.video_id === video_id && b.start === start);
+    if (isBookmarked) {
+      setBookmarks(bookmarks.filter(b => !(b.video_id === video_id && b.start === start)));
+      addToast("ลบออกจากรายการโปรดแล้ว", "success");
+    } else {
+      setBookmarks([
+        ...bookmarks,
+        {
+          video_id,
+          video_title,
+          text,
+          start,
+          timestamp,
+          bookmarked_at: Date.now()
+        }
+      ]);
+      addToast("บันทึกเป็นรายการโปรดแล้ว ⭐", "success");
+    }
+  };
+
+  const handleSummarizeVideo = async (videoId: string) => {
+    setVideoSummaries(prev => ({
+      ...prev,
+      [videoId]: { loading: true }
+    }));
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/summarize-video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_id: videoId })
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "ล้มเหลวในการสร้างสรุป");
+      
+      setVideoSummaries(prev => ({
+        ...prev,
+        [videoId]: { summary: data.summary, loading: false }
+      }));
+      addToast("สรุปเนื้อหาวิดีโอเรียบร้อย 📝", "success");
+    } catch (err: any) {
+      setVideoSummaries(prev => ({
+        ...prev,
+        [videoId]: { error: err.message, loading: false }
+      }));
+      addToast("การสรุปล้มเหลว", "error");
+    }
+  };
+
   const handleCopyLink = (videoId: string, seconds: number) => {
     const url = `https://youtu.be/${videoId}?t=${Math.floor(seconds)}`;
     navigator.clipboard.writeText(url);
     addToast("คัดลอกลิงก์ไปยังคลิปบอร์ดแล้ว!", "success");
   };
 
-  const fetchFullTranscript = async (videoId: string) => {
+  const fetchFullTranscript = async (videoId: string, highlightStart?: number) => {
     setActiveTranscriptVideoId(videoId);
     setTranscriptLoading(true);
     setFullTranscript([]);
+    if (highlightStart !== undefined) {
+      setHighlightedStart(highlightStart);
+    } else {
+      setHighlightedStart(null);
+    }
+    
     try {
       const response = await fetch(`${API_BASE}/api/video-transcript`, {
         method: "POST",
@@ -378,7 +486,8 @@ export function App() {
         return {
           text: t.text,
           start,
-          timestamp: formatSeconds(start)
+          timestamp: formatSeconds(start),
+          speaker: t.speaker
         };
       });
       setFullTranscript(formatted);
@@ -445,6 +554,13 @@ export function App() {
         >
           📊 ความคืบหน้าทำสคริปต์
         </button>
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === "bookmarks" ? "active" : ""}`}
+          onClick={() => setActiveTab("bookmarks")}
+        >
+          ⭐ รายการโปรด ({bookmarks.length})
+        </button>
       </div>
 
       {activeTab === "search" ? (
@@ -463,6 +579,24 @@ export function App() {
                 {loading ? "กำลังค้นหา..." : "ค้นหา"}
               </button>
             </form>
+
+            {/* Trending Searches */}
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center", fontSize: "0.8rem", color: "var(--t2)", marginTop: "-0.25rem" }}>
+              <span style={{ fontWeight: 500 }}>🔥 คำค้นหายอดฮิต:</span>
+              {["ซุนนะฮ์", "ดุอาอ์", "การอาบน้ำละหมาด", "ความศรัทธา", "วันกิยามะฮ์"].map((term, idx) => (
+                <span
+                  key={idx}
+                  className="history-tag"
+                  style={{ background: 'var(--bg3)', borderColor: 'var(--br2)', margin: 0 }}
+                  onClick={() => {
+                    setSearchQuery(term);
+                    handleSearch(undefined, term);
+                  }}
+                >
+                  {term}
+                </span>
+              ))}
+            </div>
 
             {/* Status indicator / Summary info */}
             <div className="status-bar">
@@ -647,6 +781,7 @@ export function App() {
               const title = (result as any).title || (videoInfo ? videoInfo.title : result.video_id);
               const thumbnail = (result as any).thumbnail || (videoInfo ? videoInfo.thumbnail : "");
               const isTranscriptMissing = (result as any).transcript_missing;
+              const summaryState = videoSummaries[result.video_id];
 
               return (
                 <div key={result.video_id} className="result-card">
@@ -672,6 +807,16 @@ export function App() {
                             📖 ดูคำแปล/สคริปต์เต็ม
                           </button>
                         )}
+                        {!isTranscriptMissing && (
+                          <button
+                            type="button"
+                            className="result-card-btn"
+                            onClick={() => handleSummarizeVideo(result.video_id)}
+                            disabled={summaryState?.loading}
+                          >
+                            📝 {summaryState?.loading ? "กำลังสรุป..." : "สรุปด้วย AI"}
+                          </button>
+                        )}
                         <a
                           href={`https://youtu.be/${result.video_id}`}
                           target="_blank"
@@ -685,6 +830,17 @@ export function App() {
                     </div>
                   </div>
 
+                  {summaryState?.summary && (
+                    <div className="ai-summary-box">
+                      <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', marginBottom: '0.35rem', color: 'var(--teal)' }}>
+                        ✨ สรุปเนื้อหาด้วย AI (3 หัวข้อสำคัญ):
+                      </h4>
+                      <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem', color: 'var(--text)' }}>
+                        {summaryState.summary}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="result-matches">
                     {isTranscriptMissing ? (
                       <div style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--t3)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -694,58 +850,84 @@ export function App() {
                         </span>
                       </div>
                     ) : (
-                      result.matches.map((match, idx) => (
-                        <div key={idx} className="match-row">
-                          <a
-                            href={`https://youtu.be/${result.video_id}?t=${Math.floor(match.start)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="match-time"
-                          >
-                            ▶ {match.timestamp}
-                          </a>
-                          <div className="match-text-container">
-                            <p className="match-text">
-                              "
-                              {(() => {
-                                if (!searchQuery.trim()) return match.text;
-                                const parts = match.text.split(new RegExp(`(${searchQuery.trim()})`, 'gi'));
-                                return parts.map((part, i) => 
-                                  part.toLowerCase() === searchQuery.trim().toLowerCase() 
-                                    ? <mark key={i} className="glow">{part}</mark> 
-                                    : part
-                                );
-                              })()}
-                              "
-                            </p>
-                            <div className="match-meta">
-                              <span className={`badge ${match.match_type}`}>
-                                {match.match_type === "exact" && "ตรงเป๊ะ"}
-                                {match.match_type === "partial" && "ตรงบางส่วน"}
-                                {match.match_type === "fuzzy" && "ใกล้เคียง"}
-                                {match.match_type === "estimated" && "คาดการณ์ตำแหน่ง"}
-                                {match.match_type !== "exact" && match.match_type !== "partial" && match.match_type !== "fuzzy" && match.match_type !== "estimated" && match.match_type}
-                                {" "}
-                                ({Math.round(match.score)}%)
-                              </span>
-                              <span style={{ color: "var(--text-muted)" }}>•</span>
-                              {match.match_type !== "estimated" ? (
+                      result.matches.map((match, idx) => {
+                        const isBookmarked = bookmarks.some(b => b.video_id === result.video_id && b.start === match.start);
+                        return (
+                          <div key={idx} className="match-row">
+                            <a
+                              href={`https://youtu.be/${result.video_id}?t=${Math.floor(match.start)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="match-time"
+                            >
+                              ▶ {match.timestamp}
+                            </a>
+                            <div className="match-text-container">
+                              <p className="match-text">
+                                {match.speaker && (
+                                  <strong style={{ color: "var(--teal)", marginRight: "0.5rem" }}>
+                                    [🗣️ {match.speaker}]:
+                                  </strong>
+                                )}
+                                "
+                                {(() => {
+                                  if (!searchQuery.trim()) return match.text;
+                                  const parts = match.text.split(new RegExp(`(${searchQuery.trim()})`, 'gi'));
+                                  return parts.map((part, i) => 
+                                    part.toLowerCase() === searchQuery.trim().toLowerCase() 
+                                      ? <mark key={i} className="glow">{part}</mark> 
+                                      : part
+                                  );
+                                })()}
+                                "
+                              </p>
+                              <div className="match-meta">
+                                <span className={`badge ${match.match_type}`}>
+                                  {match.match_type === "exact" && "ตรงเป๊ะ"}
+                                  {match.match_type === "partial" && "ตรงบางส่วน"}
+                                  {match.match_type === "fuzzy" && "ใกล้เคียง"}
+                                  {match.match_type === "semantic" && "ค้นหาด้วยความหมาย"}
+                                  {match.match_type === "estimated" && "คาดการณ์ตำแหน่ง"}
+                                  {match.match_type !== "exact" && match.match_type !== "partial" && match.match_type !== "fuzzy" && match.match_type !== "semantic" && match.match_type !== "estimated" && match.match_type}
+                                  {" "}
+                                  ({Math.round(match.score)}%)
+                                </span>
+                                <span style={{ color: "var(--text-muted)" }}>•</span>
+                                {match.match_type !== "estimated" ? (
+                                  <button
+                                    type="button"
+                                    className="copy-btn"
+                                    onClick={() => handleCopyLink(result.video_id, match.start)}
+                                  >
+                                    คัดลอกลิงก์
+                                  </button>
+                                ) : (
+                                  <span style={{ color: "var(--t3)", fontSize: "0.75rem" }}>
+                                    (กรุณากดเปิดเพื่อฟัง/ดูตำแหน่งจริง)
+                                  </span>
+                                )}
+                                <span style={{ color: "var(--text-muted)" }}>•</span>
                                 <button
                                   type="button"
                                   className="copy-btn"
-                                  onClick={() => handleCopyLink(result.video_id, match.start)}
+                                  onClick={() => toggleBookmark(result.video_id, title, match.text, match.start, match.timestamp)}
+                                  style={{ color: isBookmarked ? 'var(--teal)' : 'var(--t3)' }}
                                 >
-                                  คัดลอกลิงก์พร้อมแถมเวลา
+                                  {isBookmarked ? "⭐ บันทึกแล้ว" : "☆ บันทึก"}
                                 </button>
-                              ) : (
-                                <span style={{ color: "var(--t3)", fontSize: "0.75rem" }}>
-                                  (กรุณากดเปิดเพื่อฟัง/ดูตำแหน่งจริง)
-                                </span>
-                              )}
+                                <span style={{ color: "var(--text-muted)" }}>•</span>
+                                <button
+                                  type="button"
+                                  className="copy-btn"
+                                  onClick={() => fetchFullTranscript(result.video_id, match.start)}
+                                >
+                                  📖 ดูบริบทในสคริปต์
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -763,11 +945,106 @@ export function App() {
         <div style={{ animation: "slideIn 0.25s ease-out" }}>
           <ChatInterface videos={videos} />
         </div>
+      ) : activeTab === "bookmarks" ? (
+        <div className="bookmarks-container" style={{ animation: "slideIn 0.25s ease-out" }}>
+          <div className="results-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <span>⭐ รายการโปรดที่บันทึกไว้ ({bookmarks.length} ประโยค)</span>
+            {bookmarks.length > 0 && (
+              <button 
+                type="button" 
+                className="copy-btn" 
+                style={{ color: 'var(--error)' }}
+                onClick={() => { if(confirm("ล้างรายการโปรดทั้งหมดหรือไม่?")) setBookmarks([]); }}
+              >
+                ล้างทั้งหมด
+              </button>
+            )}
+          </div>
+          
+          {bookmarks.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--text-muted)" }}>
+              <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>⭐</div>
+              ยังไม่มีประโยคที่บันทึกไว้<br />
+              <span style={{ fontSize: "0.85rem", marginTop: '0.5rem', display: 'block' }}>คุณสามารถแตะ ☆ บันทึก ที่ใต้ข้อความในผลการค้นหาเพื่อเก็บไว้ที่นี่</span>
+            </div>
+          ) : (
+            <div className="bookmarks-list">
+              {bookmarks.map((bookmark, idx) => (
+                <div key={idx} className="result-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+                    <div>
+                      <h4 style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text)', marginBottom: '0.25rem' }}>
+                        {bookmark.video_title}
+                      </h4>
+                      <p style={{ fontSize: '0.7rem', color: 'var(--t3)' }}>
+                        บันทึกเมื่อ: {new Date(bookmark.bookmarked_at).toLocaleDateString('th-TH')} {new Date(bookmark.bookmarked_at).toLocaleTimeString('th-TH')}
+                      </p>
+                    </div>
+                    <button 
+                      type="button" 
+                      className="result-card-btn" 
+                      style={{ color: 'var(--error)', borderColor: 'rgba(239, 68, 68, 0.2)' }}
+                      onClick={() => setBookmarks(bookmarks.filter(b => !(b.video_id === bookmark.video_id && b.start === bookmark.start)))}
+                    >
+                      ลบออก
+                    </button>
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', background: 'var(--bg2)', padding: '0.75rem', borderRadius: '8px' }}>
+                    <a
+                      href={`https://youtu.be/${bookmark.video_id}?t=${Math.floor(bookmark.start)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="match-time"
+                    >
+                      ▶ {bookmark.timestamp}
+                    </a>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--t2)', flex: 1, margin: 0, fontWeight: 300 }}>
+                      "{bookmark.text}"
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       ) : (
         /* New Dashboard Panel */
         <div className="dashboard-container" style={{ animation: "slideIn 0.25s ease-out" }}>
+          {/* Sequential CC Sync Progress State */}
+          {syncProgress && (
+            <div className="live-status-card active" style={{ marginBottom: "1rem" }}>
+              <div className="live-status-header">
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span className="live-pulse-dot running"></span>
+                  <span style={{ fontWeight: "600", fontSize: "0.9rem" }}>
+                    กำลังดูดข้อมูล CC ภาษาไทยเบื้องหลัง (Live)...
+                  </span>
+                </div>
+              </div>
+              <div className="live-status-body">
+                <div className="live-progress-bar-wrapper">
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", marginBottom: "0.35rem" }}>
+                    <span style={{ color: "var(--teal)", fontWeight: "500" }}>
+                      กำลังซิงค์ทีละ 8 คลิป...
+                    </span>
+                    <span style={{ fontWeight: "600" }}>
+                      คลิปที่ {syncProgress.current}/{syncProgress.total} ({Math.round((syncProgress.current / syncProgress.total) * 100)}%)
+                    </span>
+                  </div>
+                  <div className="live-progress-bg">
+                    <div 
+                      className="live-progress-fill" 
+                      style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Active Transcription Task Indicator */}
-          {transcriptionStatus && (
+          {transcriptionStatus && !syncProgress && (
             <div className={`live-status-card ${transcriptionStatus.status === "running" ? "active" : "idle"}`}>
               <div className="live-status-header">
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -1034,19 +1311,37 @@ export function App() {
                   กำลังดึงข้อมูลสคริปต์เต็ม...
                 </div>
               ) : (
-                fullTranscript.map((line, idx) => (
-                  <div key={idx} className="transcript-line">
-                    <a
-                      href={`https://youtu.be/${activeTranscriptVideoId}?t=${Math.floor(line.start)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="transcript-time"
+                fullTranscript.map((line, idx) => {
+                  const isHighlighted = highlightedStart !== null && Math.abs(line.start - highlightedStart) < 0.5;
+                  return (
+                    <div 
+                      key={idx} 
+                      ref={(el) => {
+                        if (el && isHighlighted) {
+                          el.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }
+                      }}
+                      className={`transcript-line ${isHighlighted ? "highlighted-line" : ""}`}
                     >
-                      [{line.timestamp}]
-                    </a>
-                    <p className="transcript-text">{line.text}</p>
-                  </div>
-                ))
+                      <a
+                        href={`https://youtu.be/${activeTranscriptVideoId}?t=${Math.floor(line.start)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="transcript-time"
+                      >
+                        [{line.timestamp}]
+                      </a>
+                      <p className="transcript-text">
+                        {line.speaker && (
+                          <strong style={{ color: "var(--teal)", marginRight: "0.5rem" }}>
+                            [🗣️ {line.speaker}]:
+                          </strong>
+                        )}
+                        {line.text}
+                      </p>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

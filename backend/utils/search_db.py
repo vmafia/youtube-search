@@ -31,7 +31,8 @@ def ensure_tables(client):
                 start_time REAL,
                 timestamp TEXT,
                 text TEXT,
-                norm_text TEXT
+                norm_text TEXT,
+                speaker TEXT
             )""",
             "CREATE INDEX IF NOT EXISTS idx_transcripts_video_start ON transcripts(video_id, start_time)",
             "CREATE INDEX IF NOT EXISTS idx_transcripts_video_id ON transcripts(video_id)",
@@ -43,6 +44,23 @@ def ensure_tables(client):
                 norm_text
             )"""
         ])
+        
+        # Try to dynamically add speaker column to transcripts relational table for compatibility
+        try:
+            client.execute("ALTER TABLE transcripts ADD COLUMN speaker TEXT")
+        except Exception:
+            pass
+            
+        # Dynamically create vector table and index if using remote Turso DB
+        db_url = os.environ.get("TURSO_DATABASE_URL")
+        if db_url and "turso.io" in db_url:
+            try:
+                client.execute("CREATE TABLE IF NOT EXISTS transcript_embeddings (video_id TEXT, start_time REAL, embedding F32_BLOB(768))")
+                client.execute("CREATE INDEX IF NOT EXISTS idx_embeddings ON transcript_embeddings (libsql_vector_idx(embedding, 'metric=cosine'))")
+                logger.info("Turso vector table and index verified/created.")
+            except Exception as ve:
+                logger.warning(f"Could not initialize Turso vector tables: {ve}")
+                
         logger.info("Database tables and indexes verified/created successfully.")
     except Exception as e:
         logger.error(f"Failed to ensure database tables and indexes: {e}")
@@ -109,19 +127,26 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
     video_filter = ""
     params = [fts_query]
     
+    # Safeguard against SQLite parameter limit (too many SQL variables)
+    if video_ids and len(video_ids) > 900:
+        logger.info(f"Bypassing video_ids filter: length {len(video_ids)} is close to SQLite parameter limits.")
+        video_ids = None
+        
     if video_ids:
         placeholders = ",".join("?" * len(video_ids))
-        video_filter = f" AND video_id IN ({placeholders})"
+        video_filter = f" AND fts.video_id IN ({placeholders})"
         params.extend(video_ids)
         
     sql = f"""
         SELECT 
-            video_id, 
-            start_time, 
-            timestamp, 
-            text, 
-            bm25(transcripts_fts) as score
-        FROM transcripts_fts
+            fts.video_id, 
+            fts.start_time, 
+            fts.timestamp, 
+            fts.text, 
+            bm25(transcripts_fts) as score,
+            t.speaker
+        FROM transcripts_fts fts
+        LEFT JOIN transcripts t ON fts.video_id = t.video_id AND fts.start_time = t.start_time
         WHERE transcripts_fts MATCH ?
         {video_filter}
         ORDER BY score
@@ -131,10 +156,6 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
     try:
         rs = client.execute(sql, params)
         rows = rs.rows
-        
-        # Removed LIKE fallback to prevent massive 1.6M row full table scans
-        # which consume millions of Turso reads and cause Vercel timeouts.
-            
     except Exception as e:
         logger.error(f"Turso FTS5 error: {e}")
         return []
@@ -149,6 +170,7 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
         timestamp = row[2]
         text = row[3]
         score = row[4]
+        speaker = row[5] if len(row) > 5 else None
         
         if vid not in grouped_results:
             grouped_results[vid] = {
@@ -170,7 +192,8 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
             "timestamp": timestamp,
             "start": start_time,
             "text": text,
-            "score": ui_score
+            "score": ui_score,
+            "speaker": speaker
         })
         
         if ui_score > grouped_results[vid]["max_score"]:
@@ -180,6 +203,98 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
     results = list(grouped_results.values())
     results.sort(key=lambda x: x["max_score"], reverse=True)
     
+    return results[:limit]
+
+def search_vector(query_embedding: List[float], limit: int = 50, video_ids: List[str] = None) -> List[Dict[str, Any]]:
+    """
+    Search using Turso Vector Similarity.
+    Queries the transcript_embeddings table using vector_top_k and returns results.
+    """
+    db_url = os.environ.get("TURSO_DATABASE_URL")
+    if not db_url or not query_embedding:
+        return []
+        
+    try:
+        client = get_db_client()
+    except Exception as e:
+        logger.error(f"Cannot connect to Turso DB for vector search: {e}")
+        return []
+        
+    video_filter = ""
+    params = [json.dumps(query_embedding)]
+    
+    if video_ids and len(video_ids) > 900:
+        video_ids = None
+        
+    if video_ids:
+        placeholders = ",".join("?" * len(video_ids))
+        video_filter = f" AND e.video_id IN ({placeholders})"
+        params.extend(video_ids)
+        
+    # We use vector_top_k to do vector search. 
+    # Since we need to get text, we join with the transcripts table.
+    sql = f"""
+        SELECT 
+            e.video_id, 
+            e.start_time, 
+            t.timestamp, 
+            t.text, 
+            vector_distance_cos(e.embedding, vector(?)) as distance,
+            t.speaker
+        FROM transcript_embeddings e
+        JOIN transcripts t ON e.video_id = t.video_id AND e.start_time = t.start_time
+        WHERE vector_top_k(e.embedding, vector(?), {limit * 3})
+        {video_filter}
+        ORDER BY distance ASC
+        LIMIT {limit * 3}
+    """
+    # Duplicate query embedding for both vector_distance_cos and vector_top_k
+    import json
+    params.insert(1, json.dumps(query_embedding))
+    
+    try:
+        rs = client.execute(sql, params)
+        rows = rs.rows
+    except Exception as e:
+        logger.error(f"Turso vector search error: {e}")
+        return []
+    finally:
+        client.close()
+        
+    # Group results by video_id
+    grouped_results = {}
+    for row in rows:
+        vid = row[0]
+        start_time = row[1]
+        timestamp = row[2]
+        text = row[3]
+        distance = row[4]
+        speaker = row[5] if len(row) > 5 else None
+        
+        # Convert cosine distance to compatibility score (0.0 to 1.0, lower distance is better)
+        score = (1.0 - (distance / 2.0)) * 100.0
+        
+        if vid not in grouped_results:
+            grouped_results[vid] = {
+                "video_id": vid,
+                "max_score": 0,
+                "matches": []
+            }
+            
+        grouped_results[vid]["matches"].append({
+            "timestamp": timestamp,
+            "start": start_time,
+            "text": text,
+            "score": round(score, 1),
+            "match_type": "semantic",
+            "speaker": speaker
+        })
+        
+        if score > grouped_results[vid]["max_score"]:
+            grouped_results[vid]["max_score"] = score
+            
+    results = list(grouped_results.values())
+    results.sort(key=lambda x: x["max_score"], reverse=True)
     return results[:limit]
 
 def get_db_stats() -> Dict[str, Any]:

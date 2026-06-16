@@ -245,6 +245,24 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
   return (
     <div className="chat-layout-wrapper" style={{ display: 'flex', height: 'calc(100vh - 200px)', minHeight: '500px', maxHeight: '800px', background: 'var(--bg2)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden', position: 'relative' }}>
       
+      {/* Sidebar Overlay Backdrop for Mobile */}
+      {isSidebarOpen && typeof window !== "undefined" && window.innerWidth <= 768 && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(2px)',
+            zIndex: 9,
+            transition: 'opacity 0.25s ease'
+          }}
+        />
+      )}
+      
       {/* Sidebar */}
       {isSidebarOpen && (
         <div className="chat-sidebar" style={{ width: '260px', minWidth: '260px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg1)', transition: 'all 0.3s ease', position: window.innerWidth <= 768 ? 'absolute' : 'relative', height: '100%', zIndex: 10 }}>

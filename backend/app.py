@@ -199,12 +199,54 @@ def search():
     expanded_queries = expand_query(query, api_key=gemini_key)
     logger.info(f"Search request: '{query}'. Expanded queries: {expanded_queries}")
 
-    from backend.utils.search_db import search_sqlite_fts
-    results = search_sqlite_fts(expanded_queries, limit=50, video_ids=video_ids if video_ids else None)
+    # Run FTS Search
+    from backend.utils.search_db import search_sqlite_fts, search_vector
+    fts_results = search_sqlite_fts(expanded_queries, limit=50, video_ids=video_ids if video_ids else None)
+
+    # Run Vector Search if Gemini API key and remote Turso are active
+    vector_results = []
+    db_url = os.environ.get("TURSO_DATABASE_URL")
+    if gemini_key and db_url and "turso.io" in db_url:
+        try:
+            from backend.utils.youtube import generate_embeddings_gemini
+            query_embs = generate_embeddings_gemini([query], gemini_key)
+            if query_embs:
+                vector_results = search_vector(query_embs[0], limit=50, video_ids=video_ids if video_ids else None)
+        except Exception as ve:
+            logger.error(f"Vector search failed: {ve}")
+
+    # Merge results (Hybrid Search)
+    merged = {}
+    
+    def add_to_merged(source_results, search_type):
+        for item in source_results:
+            vid = item["video_id"]
+            if vid not in merged:
+                merged[vid] = {
+                    "video_id": vid,
+                    "max_score": item["max_score"],
+                    "matches": []
+                }
+            else:
+                merged[vid]["max_score"] = max(merged[vid]["max_score"], item["max_score"])
+                
+            existing_starts = {round(m["start"], 1) for m in merged[vid]["matches"]}
+            for match in item["matches"]:
+                rounded_start = round(match["start"], 1)
+                if rounded_start not in existing_starts:
+                    existing_starts.add(rounded_start)
+                    if "match_type" not in match:
+                        match["match_type"] = search_type
+                    merged[vid]["matches"].append(match)
+
+    add_to_merged(fts_results, "fts")
+    add_to_merged(vector_results, "semantic")
+    
+    results = list(merged.values())
+    results.sort(key=lambda x: x["max_score"], reverse=True)
 
     for r in results:
         r["thumbnail"] = f"https://img.youtube.com/vi/{r['video_id']}/mqdefault.jpg"
-        # Best score is mapped correctly in search_db
         r["best_score"] = r["max_score"]
 
     logger.info(f"Search complete: '{query}' — {len(results)} videos returned.")
@@ -213,6 +255,51 @@ def search():
         "expanded_queries": expanded_queries,
         "results": results
     }), 200
+
+
+@app.route("/api/summarize-video", methods=["POST"])
+def summarize_video():
+    """
+    Summarize a video transcript using AI into 3 bullet points.
+    """
+    data = request.get_json() or {}
+    video_id = sanitize_input(data.get("video_id", ""))
+    
+    if not video_id:
+        raise ValueError("video_id parameter is required")
+        
+    try:
+        # Fetch transcript
+        transcript = youtube_client.fetch_video_transcript(video_id)
+        if not transcript:
+            return jsonify({"error": "No transcript available for this video."}), 404
+            
+        full_text = " ".join([line.get("text", "") for line in transcript])
+        
+        # Safe limit to keep within prompt sizes
+        if len(full_text) > 40000:
+            full_text = full_text[:40000] + "... (เนื้อหามีการตัดทอนเพื่อการสรุป)"
+            
+        prompt = [
+            {
+                "role": "system", 
+                "content": "คุณคือผู้เชี่ยวชาญด้านอิสลามศึกษาและ AI อัจฉริยะ ทำหน้าที่สรุปเนื้อหาจากซับไตเติ้ลวิดีโอการบรรยายศาสนาเป็นภาษาไทยแบบกระชับ 3 หัวข้อหลัก (Bullet points) เท่านั้น แต่ละหัวข้อย่อยควรครอบคลุมใจความสำคัญ ลึกซึ้ง และตรงตามหลักการศาสนา ใช้ภาษาที่เข้าใจง่ายและสละสลวย และจัดรูปแบบแบบมีหัวข้อย่อยด้วยไอคอนสวยงาม"
+            },
+            {
+                "role": "user", 
+                "content": f"กรุณาสรุปเนื้อหาวิดีโอนี้จากซับไตเติ้ลบรรยาย:\n\n{full_text}"
+            }
+        ]
+        
+        from backend.utils.llm import generate_completion
+        summary = generate_completion(prompt, model="google/gemini-2.0-flash-exp:free", temperature=0.3)
+        return jsonify({
+            "video_id": video_id,
+            "summary": summary
+        }), 200
+    except Exception as e:
+        logger.error(f"Error summarizing video {video_id}: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/bulk-index", methods=["POST"])
@@ -281,6 +368,7 @@ def bulk_index():
         }
     }), 200
 
+
 @app.route("/api/bulk-sync-cc", methods=["POST"])
 def bulk_sync_cc():
     """
@@ -305,9 +393,8 @@ def bulk_sync_cc():
         failed = 0
         skipped = 0
         
-        # Limit to 500 per request to prevent Vercel 10s timeout
-        # Actually Vercel free tier has 10s timeout, so we should limit to ~10-20 to be safe
-        video_ids = video_ids[:20] 
+        # Limit to 8 per request to prevent Vercel 10s timeout
+        video_ids = video_ids[:8] 
         
         for vid in video_ids:
             if vid in existing_ids:
