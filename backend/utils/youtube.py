@@ -218,6 +218,7 @@ def save_transcript_to_sqlite(video_id: str, transcript: list):
             
         # Generate and save embeddings if Gemini API key and remote Turso are active
         gemini_api_key = Config.GEMINI_API_KEY
+        db_url = os.environ.get("TURSO_DATABASE_URL")
         if gemini_api_key and db_url and "turso.io" in db_url:
             try:
                 # Chunk transcript into batches of 100 to call Gemini batch embeddings

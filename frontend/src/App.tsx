@@ -112,6 +112,7 @@ export function App() {
     current_video_id: string;
     current_video_title: string;
     progress_state: string;
+    detail_percent?: number;
     success_count: number;
     fail_count: number;
     last_updated: number;
@@ -1098,6 +1099,46 @@ export function App() {
                         style={{ width: `${(transcriptionStatus.current_index / transcriptionStatus.total_to_process) * 100}%` }}
                       ></div>
                     </div>
+                    
+                    {/* Detailed Progress Bar for Current Video */}
+                    {transcriptionStatus.detail_percent !== undefined && (
+                      <div className="live-detail-progress-wrapper" style={{ marginTop: "0.75rem", padding: "0.5rem", background: "var(--bg3)", borderRadius: "8px", border: "1px solid var(--br2)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "0.35rem", color: "var(--t2)" }}>
+                          <span style={{ fontWeight: "500" }}>
+                            {transcriptionStatus.progress_state === "downloading" ? "สถานะย่อย: กำลังดาวน์โหลดไฟล์เสียง" 
+                              : transcriptionStatus.progress_state === "uploading_gemini" ? "สถานะย่อย: กำลังส่งข้อมูลขึ้นคลาวด์"
+                              : transcriptionStatus.progress_state === "generating_transcript" ? "สถานะย่อย: AI กำลังฟังและพิมพ์ข้อความ"
+                              : "สถานะย่อย: เสร็จสิ้น"}
+                          </span>
+                          <span style={{ fontWeight: "600", color: "var(--t1)" }}>
+                            {transcriptionStatus.progress_state === "downloading" 
+                              ? `${transcriptionStatus.detail_percent.toFixed(1)}%` 
+                              : transcriptionStatus.progress_state === "uploading_gemini" || transcriptionStatus.progress_state === "generating_transcript" 
+                                ? "กำลังประมวลผล..." 
+                                : "100%"}
+                          </span>
+                        </div>
+                        <div className="live-progress-bg" style={{ height: "6px", background: "var(--bg2)", borderRadius: "4px" }}>
+                          <div 
+                            className="live-progress-fill"
+                            style={{ 
+                              width: transcriptionStatus.progress_state === "downloading" 
+                                      ? `${transcriptionStatus.detail_percent}%` 
+                                      : transcriptionStatus.progress_state === "uploading_gemini" || transcriptionStatus.progress_state === "generating_transcript" 
+                                        ? "100%" 
+                                        : transcriptionStatus.progress_state.includes("fail") ? "100%" : "0%",
+                              background: transcriptionStatus.progress_state === "downloading" 
+                                          ? "var(--teal)" 
+                                          : transcriptionStatus.progress_state.includes("fail")
+                                          ? "var(--error)"
+                                          : "linear-gradient(90deg, #3b82f6, var(--teal))",
+                              opacity: transcriptionStatus.progress_state === "uploading_gemini" || transcriptionStatus.progress_state === "generating_transcript" ? 0.7 : 1,
+                              transition: "width 0.3s ease"
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
                   <div className="live-stats-row">

@@ -6,6 +6,7 @@ import json
 import argparse
 import subprocess
 import requests
+import yt_dlp
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -46,34 +47,61 @@ def update_status(status_data):
     except Exception as e:
         log(f"Failed to update status file: {e}", "WARN")
 
-def download_audio(video_id: str, output_path: str) -> bool:
+def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
     """Download audio using yt-dlp."""
     log(f"Downloading audio for {video_id}...", "INFO")
     url = f"https://www.youtube.com/watch?v={video_id}"
-    cmd = [
-        "yt-dlp",
-        "-f", "m4a/bestaudio/best",
-        "--extract-audio",
-        "--audio-format", "m4a",
-        "--quiet",
-        "--no-warnings",
-        "-o", output_path,
-        url
-    ]
+    
+    ydl_opts = {
+        'format': 'm4a/bestaudio/best',
+        'extract_audio': True,
+        'audio_format': 'm4a',
+        'outtmpl': output_path,
+        'quiet': True,
+        'no_warnings': True,
+    }
+    
+    if progress_cb:
+        last_update = [0]
+        def hook(d):
+            if d['status'] == 'downloading':
+                now = time.time()
+                # Throttling updates to 2 times a second
+                if now - last_update[0] < 0.5:
+                    return
+                last_update[0] = now
+                
+                p_str = d.get('_percent_str', '0%')
+                # Remove ansi codes and %
+                import re
+                p_str = re.sub(r'\x1b\[[0-9;]*m', '', p_str)
+                p_str = p_str.replace('%', '').strip()
+                try:
+                    progress_cb(float(p_str))
+                except ValueError:
+                    pass
+        ydl_opts['progress_hooks'] = [hook]
+
     try:
-        subprocess.run(cmd, check=True)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        if progress_cb:
+            progress_cb(100.0)
         return True
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         log(f"Failed to download audio for {video_id}: {e}", "ERR")
         return False
 
-def transcribe_audio_with_gemini(audio_path: str, client: genai.Client) -> list:
+def transcribe_audio_with_gemini(audio_path: str, client: genai.Client, status_cb=None) -> list:
     """Upload to Gemini and get JSON transcript."""
     log("Uploading audio to Gemini...", "INFO")
     
     # Upload file
     myfile = client.files.upload(file=audio_path)
     log(f"File uploaded successfully: {myfile.name}", "OK")
+    
+    if status_cb:
+        status_cb("generating_transcript")
     
     prompt = """
     You are an expert transcriptionist and audio analyst. Please transcribe the following Thai speech accurately, segmenting by speaker shifts (Speaker Diarization).
@@ -215,6 +243,7 @@ def main():
         "current_video_id": "",
         "current_video_title": "",
         "progress_state": "starting",
+        "detail_percent": 0.0,
         "success_count": 0,
         "fail_count": 0,
         "last_updated": time.time()
@@ -230,24 +259,35 @@ def main():
         status["current_video_id"] = vid
         status["current_video_title"] = title
         status["progress_state"] = "downloading"
+        status["detail_percent"] = 0.0
         status["last_updated"] = time.time()
         update_status(status)
 
         audio_path = os.path.join(temp_audio_dir, f"{vid}.m4a")
         
+        def set_download_progress(pct):
+            status["detail_percent"] = pct
+            update_status(status)
+
         # Download
-        if not download_audio(vid, audio_path):
+        if not download_audio(vid, audio_path, progress_cb=set_download_progress):
             failed += 1
             status["fail_count"] = failed
             status["progress_state"] = "download_failed"
+            status["detail_percent"] = 0.0
             update_status(status)
             continue
 
         # Transcribe
         status["progress_state"] = "uploading_gemini"
+        status["detail_percent"] = 0.0 # reset for AI processing
         update_status(status)
         
-        transcript = transcribe_audio_with_gemini(audio_path, client)
+        def set_transcribe_status(state):
+            status["progress_state"] = state
+            update_status(status)
+            
+        transcript = transcribe_audio_with_gemini(audio_path, client, status_cb=set_transcribe_status)
         
         # Cleanup audio
         if os.path.exists(audio_path):
