@@ -42,7 +42,7 @@ body {
   background-image: 
     radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.08), transparent 25%),
     radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.05), transparent 25%);
-  color: var(--text);
+  color: var(--text) !important;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -65,7 +65,7 @@ body {
 .header h1 {
   font-size: 1.8rem;
   font-weight: 600;
-  color: var(--text);
+  color: var(--text) !important;
 }
 
 .header p {
@@ -104,7 +104,7 @@ body {
   border: none;
   padding: 0.8rem 1rem;
   font-size: 1.05rem;
-  color: var(--text);
+  color: var(--text) !important;
   outline: none;
 }
 
@@ -140,7 +140,7 @@ body {
 
 .btn-secondary {
   background: var(--bg2);
-  color: var(--text);
+  color: var(--text) !important;
   border: 0.5px solid var(--br);
 }
 
@@ -175,7 +175,7 @@ body {
   background: var(--acc2);
   padding: 0.25rem 0.65rem;
   border-radius: 20px;
-  color: var(--text);
+  color: var(--text) !important;
   border: 0.5px solid var(--acc-br);
 }
 
@@ -232,7 +232,7 @@ body {
   border: 0.5px solid var(--br);
   border-radius: 8px;
   font-size: 0.9rem;
-  color: var(--text);
+  color: var(--text) !important;
   outline: none;
   margin-bottom: 0.75rem;
   transition: border-color 0.2s;
@@ -307,7 +307,7 @@ body {
 }
 
 .video-card.selected .video-card-title {
-  color: var(--text);
+  color: var(--text) !important;
 }
 
 .video-card-date {
@@ -358,7 +358,7 @@ body {
 
 .history-tag:hover {
   background: var(--bg3);
-  color: var(--text);
+  color: var(--text) !important;
   border-color: var(--teal);
 }
 
@@ -370,7 +370,7 @@ body {
 .results-header {
   font-size: 1.1rem;
   font-weight: 500;
-  color: var(--text);
+  color: var(--text) !important;
   margin-bottom: 1rem;
 }
 
@@ -411,7 +411,7 @@ body {
 .result-card-title {
   font-size: 0.95rem;
   font-weight: 500;
-  color: var(--text);
+  color: var(--text) !important;
   line-height: 1.4;
   margin-bottom: 0.35rem;
 }
@@ -435,7 +435,7 @@ body {
 
 .result-card-btn:hover {
   border-color: var(--acc-br);
-  color: var(--text);
+  color: var(--text) !important;
   background: var(--bg3);
 }
 
@@ -526,7 +526,7 @@ body {
 }
 
 .tab-btn:hover {
-  color: var(--text);
+  color: var(--text) !important;
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -583,7 +583,7 @@ body {
 }
 
 .copy-btn:hover {
-  color: var(--text);
+  color: var(--text) !important;
   text-decoration: underline;
 }
 
@@ -601,7 +601,7 @@ body {
   padding: 0.75rem 1.25rem;
   border-radius: 12px;
   font-size: 0.9rem;
-  color: var(--text);
+  color: var(--text) !important;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -989,7 +989,7 @@ body {
 .stat-value {
   font-size: 1.5rem;
   font-weight: 600;
-  color: var(--text);
+  color: var(--text) !important;
 }
 
 /* Progress Bar */
@@ -1064,7 +1064,7 @@ body {
 .video-list-title {
   font-size: 1rem;
   font-weight: 500;
-  color: var(--text);
+  color: var(--text) !important;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1080,8 +1080,8 @@ body {
 
 /* Glowing Mark */
 mark.glow {
-  background-color: transparent;
-  color: var(--text);
+  background-color: transparent !important;
+  color: var(--text) !important;
   font-weight: 600;
   text-shadow: 0 0 8px var(--acc-glow);
   position: relative;
