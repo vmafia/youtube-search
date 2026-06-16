@@ -244,13 +244,17 @@ def main():
         "current_video_title": "",
         "progress_state": "starting",
         "detail_percent": 0.0,
+        "eta_seconds": 0.0,
         "success_count": 0,
         "fail_count": 0,
         "last_updated": time.time()
     }
     update_status(status)
 
+    recent_durations = []
+
     for i, video in enumerate(missing_videos, 1):
+        video_start_time = time.time()
         vid = video["id"]
         title = video["title"]
         log(f"Processing {i}/{total}: {title} ({vid})", "INFO")
@@ -324,6 +328,16 @@ def main():
         # Rate limit protection: Sleep for 30 seconds to prevent hitting the 250k Tokens/Min limit
         log("Sleeping 30 seconds to avoid hitting API rate limits...", "INFO")
         time.sleep(30)
+        
+        # Calculate ETA
+        elapsed = time.time() - video_start_time
+        recent_durations.append(elapsed)
+        if len(recent_durations) > 5:
+            recent_durations.pop(0)
+        
+        avg_duration = sum(recent_durations) / len(recent_durations)
+        status["eta_seconds"] = avg_duration * (total - i)
+        update_status(status)
 
     log(f"Finished! Success: {success}, Failed: {failed}", "OK")
     

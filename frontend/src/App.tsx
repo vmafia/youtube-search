@@ -113,6 +113,7 @@ export function App() {
     current_video_title: string;
     progress_state: string;
     detail_percent?: number;
+    eta_seconds?: number;
     success_count: number;
     fail_count: number;
     last_updated: number;
@@ -170,6 +171,14 @@ export function App() {
       case "stopped": return "🛑 ระบบหยุดการทำงาน";
       default: return state || "รอดำเนินการ...";
     }
+  };
+
+  const formatETA = (seconds?: number): string => {
+    if (!seconds || seconds <= 0) return "กำลังคำนวณเวลา...";
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (h > 0) return `คาดว่าจะเสร็จในอีกประมาณ ${h} ชม. ${m} นาที`;
+    return `คาดว่าจะเสร็จในอีกประมาณ ${m} นาที`;
   };
 
   // Fetch stats and live status when tab changes to dashboard or videos load
@@ -1068,11 +1077,18 @@ export function App() {
                     {transcriptionStatus.status === "running" ? "กำลังถอดความศาสนาอิสลามเบื้องหลัง (Live)" : "ระบบถอดความเบื้องหลัง: สแตนด์บาย"}
                   </span>
                 </div>
-                {transcriptionStatus.last_updated > 0 && (
-                  <span style={{ fontSize: "0.75rem", color: "var(--t3)" }}>
-                    อัปเดตล่าสุด: {new Date(transcriptionStatus.last_updated * 1000).toLocaleTimeString("th-TH")}
-                  </span>
-                )}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                  {transcriptionStatus.last_updated > 0 && (
+                    <span style={{ fontSize: "0.75rem", color: "var(--t3)" }}>
+                      อัปเดตล่าสุด: {new Date(transcriptionStatus.last_updated * 1000).toLocaleTimeString("th-TH")}
+                    </span>
+                  )}
+                  {transcriptionStatus.status === "running" && (
+                    <span style={{ fontSize: "0.75rem", color: "var(--primary)", fontWeight: "500", marginTop: "2px" }}>
+                      ⏳ {formatETA(transcriptionStatus.eta_seconds)}
+                    </span>
+                  )}
+                </div>
               </div>
               
               {transcriptionStatus.status === "running" ? (
