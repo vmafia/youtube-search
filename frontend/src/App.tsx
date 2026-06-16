@@ -543,7 +543,7 @@ export function App() {
                                 className={`video-card ${isSelected ? "selected" : ""}`}
                                 onClick={() => toggleVideoSelection(video.id)}
                               >
-                                <div className="card card video-card-checkbox-wrapper">
+                                <div className="video-card-checkbox-wrapper">
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
@@ -553,11 +553,11 @@ export function App() {
                                 <img
                                   src={video.thumbnail}
                                   alt={video.title}
-                                  className="card card video-card-thumbnail"
+                                  className="video-card-thumbnail"
                                 />
-                                <div className="card card video-card-info">
-                                  <span className="card card video-card-title">{video.title}</span>
-                                  <span className="card card video-card-date">{video.published_at}</span>
+                                <div className="video-card-info">
+                                  <span className="video-card-title">{video.title}</span>
+                                  <span className="video-card-date">{video.published_at}</span>
                                 </div>
                               </div>
                             );
@@ -788,18 +788,18 @@ export function App() {
           )}
 
           {/* Dashboard Stats */}
-          <div className="grid3">
-            <div className="card card stat-card">
+          <div className="dashboard-grid">
+            <div className="card stat-card">
               <span className="stat-label">วิดีโอทั้งหมด</span>
               <span className="stat-value">{videos.length} คลิป</span>
             </div>
-            <div className="card card stat-card">
+            <div className="card stat-card">
               <span className="stat-label">มีสคริปต์พร้อมค้นหาแล้ว</span>
               <span className="stat-value" style={{ color: "var(--success)" }}>
                 {statsLoading ? "..." : `${stats?.transcribed_count || 0} คลิป`}
               </span>
             </div>
-            <div className="card card stat-card">
+            <div className="card stat-card">
               <span className="stat-label">รอคิวแกะเสียง</span>
               <span className="stat-value" style={{ color: "#f59e0b" }}>
                 {statsLoading ? "..." : `${videos.length > 0 && stats ? Math.max(0, videos.length - stats.transcribed_count) : 0} คลิป`}
@@ -838,7 +838,7 @@ export function App() {
           </div>
 
           {/* Video List Card */}
-          <div className="card card dashboard-list-card">
+          <div className="card dashboard-list-card">
             <div className="dashboard-list-header">
               <h3 style={{ fontSize: "1rem", fontWeight: "600", color: "var(--text)" }}>รายการวิดีโอและสถานะสคริปต์</h3>
               <input
