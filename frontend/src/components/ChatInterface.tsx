@@ -18,53 +18,153 @@ interface Message {
   context?: any[];
 }
 
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  updatedAt: number;
+}
+
 interface ChatInterfaceProps {
   videos?: Video[];
 }
 
 export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<Message[]>(() => {
-    // Load from localStorage on mount
+  // Load sessions from localStorage
+  const [sessions, setSessions] = useState<ChatSession[]>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("chat_history");
+      const saved = localStorage.getItem("chat_sessions");
       if (saved) {
-        try { return JSON.parse(saved); } catch (e) {}
+        try { 
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.length > 0) return parsed;
+        } catch (e) {}
+      }
+      
+      // Fallback: Check if there's old chat_history to migrate
+      const oldHistory = localStorage.getItem("chat_history");
+      if (oldHistory) {
+        try {
+          const parsedOld = JSON.parse(oldHistory);
+          if (parsedOld && parsedOld.length > 0) {
+            return [{
+              id: Date.now().toString(),
+              title: "ห้องแชทเดิม",
+              messages: parsedOld,
+              updatedAt: Date.now()
+            }];
+          }
+        } catch (e) {}
       }
     }
-    return [];
+    // Default empty session
+    return [{
+      id: Date.now().toString(),
+      title: "แชทใหม่",
+      messages: [{ role: 'assistant', content: 'สวัสดีครับ! มีเรื่องศาสนาอิสลามอะไรที่คุณอยากรู้จากวิดีโอไหมครับ?' }],
+      updatedAt: Date.now()
+    }];
   });
+
+  const [activeSessionId, setActiveSessionId] = useState<string>(sessions[0]?.id);
   
+  const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
+  const messages = activeSession ? activeSession.messages : [];
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Save to localStorage whenever messages change
+  // Save to localStorage whenever sessions change
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("chat_history", JSON.stringify(messages));
+      localStorage.setItem("chat_sessions", JSON.stringify(sessions));
     }
+  }, [sessions]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const updateActiveSession = (newMessages: Message[], autoTitle?: string) => {
+    setSessions(prev => prev.map(s => {
+      if (s.id === activeSessionId) {
+        return {
+          ...s,
+          messages: newMessages,
+          title: autoTitle || s.title,
+          updatedAt: Date.now()
+        };
+      }
+      return s;
+    }).sort((a, b) => b.updatedAt - a.updatedAt));
+  };
+
+  const createNewSession = () => {
+    const newSession: ChatSession = {
+      id: Date.now().toString(),
+      title: "แชทใหม่",
+      messages: [{ role: 'assistant', content: 'สวัสดีครับ! มีเรื่องศาสนาอิสลามอะไรที่คุณอยากรู้จากวิดีโอไหมครับ?' }],
+      updatedAt: Date.now()
+    };
+    setSessions(prev => [newSession, ...prev]);
+    setActiveSessionId(newSession.id);
+  };
+
+  const deleteSession = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if(confirm("คุณต้องการลบห้องแชทนี้หรือไม่?")) {
+      setSessions(prev => {
+        const filtered = prev.filter(s => s.id !== id);
+        if (filtered.length === 0) {
+          const fresh: ChatSession = {
+            id: Date.now().toString(),
+            title: "แชทใหม่",
+            messages: [{ role: 'assistant', content: 'สวัสดีครับ! มีเรื่องศาสนาอิสลามอะไรที่คุณอยากรู้จากวิดีโอไหมครับ?' }],
+            updatedAt: Date.now()
+          };
+          setActiveSessionId(fresh.id);
+          return [fresh];
+        }
+        if (activeSessionId === id) {
+          setActiveSessionId(filtered[0].id);
+        }
+        return filtered;
+      });
+    }
+  };
 
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!input.trim() || loading) return;
 
     const userMessage = { role: 'user' as const, content: input.trim() };
-    setMessages(prev => [...prev, userMessage]);
+    const currentMessages = [...messages, userMessage];
+    
+    // Auto-title if it's a new chat
+    let newTitle = activeSession.title;
+    if (activeSession.title === "แชทใหม่" && currentMessages.filter(m => m.role === 'user').length === 1) {
+      newTitle = input.trim().substring(0, 30) + (input.length > 30 ? "..." : "");
+    }
+    
+    updateActiveSession(currentMessages, newTitle);
     setInput('');
     setLoading(true);
     
-    // Add an empty assistant message to stream into
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+    // Add empty assistant message
+    const msgsWithLoading = [...currentMessages, { role: 'assistant' as const, content: '' }];
+    updateActiveSession(msgsWithLoading);
 
     try {
-      const messageHistory = [...messages, userMessage].map(m => ({ role: m.role, content: m.content }));
+      const messageHistory = currentMessages.map(m => ({ role: m.role, content: m.content }));
       
       const response = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: messageHistory })
+        body: JSON.stringify({ 
+          messages: messageHistory,
+          videos: videos.map(v => ({ id: v.id, title: v.title }))
+        })
       });
       
       if (!response.ok) {
@@ -79,6 +179,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
       let done = false;
       let assistantText = "";
       let buffer = "";
+      let finalMsgs = [...msgsWithLoading];
       
       while (!done) {
         const { value, done: readerDone } = await reader.read();
@@ -86,7 +187,6 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
         if (value) {
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
-          // The last element is either empty (ended in \n) or a partial line
           buffer = lines.pop() || "";
           
           for (const line of lines) {
@@ -100,166 +200,171 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
               try {
                 const data = JSON.parse(dataStr);
                 if (data.type === 'context') {
-                  setMessages(prev => {
-                    const newMsgs = [...prev];
-                    newMsgs[newMsgs.length - 1].context = data.context_used;
-                    return newMsgs;
-                  });
+                  finalMsgs[finalMsgs.length - 1].context = data.context_used;
+                  updateActiveSession(finalMsgs);
                 } else if (data.type === 'status') {
-                  setMessages(prev => {
-                    const newMsgs = [...prev];
-                    const lastMsg = newMsgs[newMsgs.length - 1];
-                    lastMsg.content = `⏳ ${data.message}`;
-                    return newMsgs;
-                  });
+                  finalMsgs[finalMsgs.length - 1].content = `⏳ ${data.message}`;
+                  updateActiveSession(finalMsgs);
                 } else if (data.type === 'chunk') {
                   assistantText += data.content;
-                  setMessages(prev => {
-                    const newMsgs = [...prev];
-                    const lastMsg = newMsgs[newMsgs.length - 1];
-                    if (lastMsg.content.startsWith('⏳')) {
-                      lastMsg.content = ''; // Clear the status message
-                    }
-                    lastMsg.content += data.content;
-                    return newMsgs;
-                  });
+                  if (finalMsgs[finalMsgs.length - 1].content.startsWith('⏳')) {
+                    finalMsgs[finalMsgs.length - 1].content = '';
+                  }
+                  finalMsgs[finalMsgs.length - 1].content = assistantText;
+                  updateActiveSession(finalMsgs);
                 }
-              } catch (err) {
-                // Ignore incomplete JSON chunks or parse errors
+              } catch (e) {
+                console.error("Error parsing JSON chunk:", e, dataStr);
               }
             }
           }
         }
-        
-        if (done) break;
       }
-
-      // If the stream ended (e.g. Vercel timeout) and no text was received at all
-      if (!assistantText) {
-        setMessages(prev => {
-          const newMsgs = [...prev];
-          const lastMsg = newMsgs[newMsgs.length - 1];
-          // Only show error if we haven't already shown a stream error
-          if (!lastMsg.content) {
-            lastMsg.content = "[ระบบขัดข้อง: เซิร์ฟเวอร์ใช้เวลาตอบกลับนานเกินไป (Timeout) หรือ AI ขัดข้อง กรุณาลองถามใหม่อีกครั้ง]";
-          }
-          return newMsgs;
-        });
-      }
-      
     } catch (err: any) {
-      setMessages(prev => {
-        // Remove the empty assistant message if it failed before typing
-        const msgs = [...prev];
-        if (msgs[msgs.length - 1].content === '') {
-            msgs.pop();
-        }
-        return [...msgs, {
-          role: 'system',
-          content: `Error: ${err.message}`
-        }];
-      });
+      const failedMsgs = [...msgsWithLoading];
+      if (failedMsgs[failedMsgs.length - 1].content === '' || failedMsgs[failedMsgs.length - 1].content.startsWith('⏳')) {
+          failedMsgs.pop();
+      }
+      failedMsgs.push({ role: 'system', content: `Error: ${err.message}` });
+      updateActiveSession(failedMsgs);
     } finally {
       setLoading(false);
     }
   };
 
-  const clearHistory = () => {
-    if(confirm("คุณต้องการลบประวัติการสนทนาทั้งหมดหรือไม่?")) {
-      setMessages([]);
-      localStorage.removeItem("chat_history");
-    }
-  };
-
   return (
-    <div className="chat-container">
-      <div className="chat-header" style={{display: 'flex', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid var(--border)', alignItems: 'center'}}>
-        <h3 style={{margin: 0, fontSize: '1rem', color: 'var(--t1)'}}>AI แชทบอท</h3>
-        {messages.length > 0 && (
-          <button onClick={clearHistory} style={{background: 'transparent', border: '1px solid var(--border)', color: 'var(--t2)', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem'}}>
-            ลบแชท
+    <div className="chat-layout-wrapper" style={{ display: 'flex', height: '650px', background: 'var(--bg2)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+      
+      {/* Sidebar */}
+      <div className="chat-sidebar" style={{ width: '260px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg1)' }}>
+        <div style={{ padding: '15px' }}>
+          <button 
+            onClick={createNewSession}
+            style={{ width: '100%', padding: '10px', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            <span>+</span> แชทใหม่
           </button>
-        )}
-      </div>
-      <div className="chat-messages">
-        {messages.length === 0 && (
-          <div className="chat-empty">
-            <div className="chat-empty-icon" style={{ fontSize: '3rem', marginBottom: '1rem' }}>🤖</div>
-            <h3 style={{ marginBottom: '0.5rem' }}>AI ถาม-ตอบจากคลิป</h3>
-            <p style={{ color: 'var(--t2)', fontSize: '0.95rem' }}>
-              พิมพ์คำถามเกี่ยวกับเนื้อหาในวิดีโอ เช่น "อาจารย์พูดถึงเรื่องนบีปลอมว่ายังไงบ้าง?"
-            </p>
-          </div>
-        )}
-        
-        {messages.map((msg, i) => (
-          <div key={i} className={`chat-message ${msg.role}`}>
-            <div className="chat-message-avatar">
-              {msg.role === 'user' ? '🧑‍💻' : (msg.role === 'assistant' ? '🤖' : '⚠️')}
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px 10px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          {sessions.map(session => (
+            <div 
+              key={session.id}
+              onClick={() => setActiveSessionId(session.id)}
+              style={{
+                padding: '10px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: session.id === activeSessionId ? 'var(--bg3)' : 'transparent',
+                border: session.id === activeSessionId ? '1px solid var(--border)' : '1px solid transparent',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                <span>💬</span>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem', color: session.id === activeSessionId ? 'var(--t1)' : 'var(--t2)' }}>
+                  {session.title}
+                </span>
+              </div>
+              <button 
+                onClick={(e) => deleteSession(e, session.id)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--t3)', cursor: 'pointer', padding: '2px 5px', borderRadius: '4px' }}
+                title="ลบแชท"
+              >
+                ✕
+              </button>
             </div>
-            <div className="chat-message-content">
-              <div className="chat-bubble" style={{ whiteSpace: 'pre-wrap' }}>
-                {msg.content === '' ? (
-                  <span style={{ fontStyle: 'italic', color: '#888' }}>กำลังประมวลผล...</span>
-                ) : (
-                  msg.content
+          ))}
+        </div>
+      </div>
+
+      {/* Main Chat Area */}
+      <div className="chat-container" style={{ flex: 1, border: 'none', borderRadius: 0, height: '100%' }}>
+        <div className="chat-header" style={{display: 'flex', justifyContent: 'space-between', padding: '15px 20px', borderBottom: '1px solid var(--border)', alignItems: 'center'}}>
+          <h3 style={{margin: 0, fontSize: '1rem', color: 'var(--t1)'}}>{activeSession?.title || "AI แชทบอท"}</h3>
+        </div>
+        
+        <div className="chat-messages" style={{ height: 'calc(100% - 130px)' }}>
+          {messages.length === 1 && messages[0].role === 'assistant' && (
+            <div className="chat-empty">
+              <div className="chat-empty-icon" style={{ fontSize: '3rem', marginBottom: '1rem' }}>🤖</div>
+              <h3 style={{ marginBottom: '0.5rem' }}>AI ถาม-ตอบจากคลิป</h3>
+              <p style={{ color: 'var(--t2)', fontSize: '0.95rem' }}>
+                พิมพ์คำถามเกี่ยวกับเนื้อหาในวิดีโอ เช่น "อาจารย์พูดถึงเรื่องนบีปลอมว่ายังไงบ้าง?"
+              </p>
+            </div>
+          )}
+          
+          {messages.map((msg, i) => (
+            <div key={i} className={`chat-message ${msg.role}`}>
+              <div className="chat-message-avatar">
+                {msg.role === 'user' ? '🧑‍💻' : (msg.role === 'assistant' ? '🤖' : '⚠️')}
+              </div>
+              <div className="chat-message-content">
+                <div className="chat-bubble" style={{ whiteSpace: 'pre-wrap' }}>
+                  {msg.content === '' ? (
+                    <span style={{ fontStyle: 'italic', color: '#888' }}>กำลังประมวลผล...</span>
+                  ) : (
+                    msg.content
+                  )}
+                </div>
+                
+                {/* Show referenced videos if AI used context */}
+                {msg.context && msg.context.length > 0 && (
+                  <div className="chat-references">
+                    <span className="ref-label">🔍 อ้างอิงจากคลิป:</span>
+                    <div className="ref-links" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {msg.context.map((ref, idx) => {
+                        const videoData = videos.find(v => v.id === ref.video_id);
+                        return (
+                          <a 
+                            key={idx} 
+                            href={`https://youtu.be/${ref.video_id}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="ref-link"
+                            style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', background: 'var(--bg2)', padding: '8px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                          >
+                            <img 
+                              src={videoData?.thumbnail || `https://i.ytimg.com/vi/${ref.video_id}/mqdefault.jpg`} 
+                              alt={videoData?.title || "Video thumbnail"} 
+                              style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px' }} 
+                            />
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ color: 'var(--t1)', fontWeight: 500, fontSize: '0.9rem', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {videoData?.title || `วิดีโอ ${ref.video_id}`}
+                              </span>
+                              <span style={{ color: 'var(--accent)', fontSize: '0.8rem' }}>
+                                ▶️ ดูคลิปเต็ม
+                              </span>
+                            </div>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
-              
-              {/* Show referenced videos if AI used context */}
-              {msg.context && msg.context.length > 0 && (
-                <div className="chat-references">
-                  <span className="ref-label">🔍 อ้างอิงจากคลิป:</span>
-                  <div className="ref-links" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {msg.context.map((ref, idx) => {
-                      const videoData = videos.find(v => v.id === ref.video_id);
-                      return (
-                        <a 
-                          key={idx} 
-                          href={`https://youtu.be/${ref.video_id}`} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="ref-link"
-                          style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', background: 'var(--bg2)', padding: '8px', borderRadius: '8px', border: '1px solid var(--border)' }}
-                        >
-                          <img 
-                            src={videoData?.thumbnail || `https://i.ytimg.com/vi/${ref.video_id}/mqdefault.jpg`} 
-                            alt={videoData?.title || "Video thumbnail"} 
-                            style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px' }} 
-                          />
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ color: 'var(--t1)', fontWeight: 500, fontSize: '0.9rem', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                              {videoData?.title || `วิดีโอ ${ref.video_id}`}
-                            </span>
-                            <span style={{ color: 'var(--accent)', fontSize: '0.8rem' }}>
-                              ▶️ ดูคลิปเต็ม
-                            </span>
-                          </div>
-                        </a>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+        
+        <form className="chat-input-area" onSubmit={handleSend}>
+          <input 
+            type="text" 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="พิมพ์คำถามของคุณที่นี่..."
+            className="chat-input"
+            disabled={loading}
+          />
+          <button type="submit" className="chat-send-btn" disabled={loading || !input.trim()}>
+            ส่ง
+          </button>
+        </form>
       </div>
-      
-      <form className="chat-input-area" onSubmit={handleSend}>
-        <input 
-          type="text" 
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="พิมพ์คำถามของคุณที่นี่..."
-          className="chat-input"
-          disabled={loading}
-        />
-        <button type="submit" className="chat-send-btn" disabled={loading || !input.trim()}>
-          ส่ง
-        </button>
-      </form>
     </div>
   );
 }

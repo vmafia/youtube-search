@@ -391,10 +391,14 @@ def chat():
                     
                     context_map = fetch_batch_surrounding_context(context_items, window_seconds=30)
                     
+                    # Map video titles from frontend payload
+                    video_list = data.get("videos", [])
+                    video_title_map = {v.get("id"): v.get("title") for v in video_list}
+                    
                     context_text = "อ้างอิงจากข้อมูลซับไตเติ้ลในฐานข้อมูล:\n"
                     for r in top_matches:
                         vid = r["video_id"]
-                        title = r.get("title", f"วิดีโอ {vid}")
+                        title = video_title_map.get(vid) or r.get("title") or f"วิดีโอ {vid}"
                         for m in r["matches"][:2]:
                             merged_text = context_map.get((vid, m["start"]), m["text"])
                             context_text += f"- ชื่อคลิป: \"{title}\" (นาทีที่ {m['timestamp']}): \"{merged_text}\"\n"

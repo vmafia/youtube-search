@@ -25,13 +25,13 @@ def generate_completion(messages, model="google/gemini-2.0-flash-exp:free", temp
         
     client = _client
     
-    # List of FREE models on OpenRouter to fallback gracefully
+    # List of FREE models on OpenRouter ordered by SPEED and SMARTNESS
     models_to_try = [
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "google/gemma-4-31b-it:free",
-        "meta-llama/llama-3.2-3b-instruct:free",
-        "nousresearch/hermes-3-llama-3.1-405b:free",
-        "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+        "google/gemma-4-31b-it:free",              # Fast & Smart (31B)
+        "meta-llama/llama-3.3-70b-instruct:free",  # Very Smart (70B) but can be slow
+        "meta-llama/llama-3.2-3b-instruct:free",   # Lightning Fast (3B) fallback
+        "nousresearch/hermes-3-llama-3.1-405b:free", # Super Smart (405B) fallback
+        "qwen/qwen3-next-80b-a3b-instruct:free"    # Great multilingual fallback
     ]
     
     # If the requested model is not in our free list, put it first
