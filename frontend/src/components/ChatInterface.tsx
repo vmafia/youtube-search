@@ -243,56 +243,62 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
   };
 
   return (
-    <div className="chat-layout-wrapper" style={{ display: 'flex', height: '650px', background: 'var(--bg2)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+    <div className="chat-layout-wrapper" style={{ display: 'flex', height: 'calc(100vh - 200px)', minHeight: '500px', maxHeight: '800px', background: 'var(--bg2)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden', position: 'relative' }}>
       
       {/* Sidebar */}
       {isSidebarOpen && (
-        <div className="chat-sidebar" style={{ width: '260px', minWidth: '260px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg1)', transition: 'all 0.3s ease' }}>
-          <div style={{ padding: '15px' }}>
-          <button 
-            onClick={createNewSession}
-            style={{ width: '100%', padding: '10px', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-          >
-            <span>+</span> แชทใหม่
-          </button>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px 10px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          {sessions.map(session => (
-            <div 
-              key={session.id}
-              onClick={() => setActiveSessionId(session.id)}
-              style={{
-                padding: '10px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                background: session.id === activeSessionId ? 'var(--bg3)' : 'transparent',
-                border: session.id === activeSessionId ? '1px solid var(--border)' : '1px solid transparent',
-              }}
+        <div className="chat-sidebar" style={{ width: '260px', minWidth: '260px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg1)', transition: 'all 0.3s ease', position: window.innerWidth <= 768 ? 'absolute' : 'relative', height: '100%', zIndex: 10 }}>
+          <div style={{ padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <button 
+              onClick={createNewSession}
+              style={{ flex: 1, padding: '10px', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-                <span>💬</span>
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem', color: session.id === activeSessionId ? 'var(--t1)' : 'var(--t2)' }}>
-                  {session.title}
-                </span>
-              </div>
-              <button 
-                onClick={(e) => deleteSession(e, session.id)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--t3)', cursor: 'pointer', padding: '2px 5px', borderRadius: '4px' }}
-                title="ลบแชท"
+              <span>+</span> แชทใหม่
+            </button>
+            {window.innerWidth <= 768 && (
+              <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--t1)', fontSize: '1.2rem', padding: '0 0 0 10px', cursor: 'pointer' }}>✕</button>
+            )}
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px 10px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            {sessions.map(session => (
+              <div 
+                key={session.id}
+                onClick={() => {
+                  setActiveSessionId(session.id);
+                  if (window.innerWidth <= 768) setIsSidebarOpen(false);
+                }}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  background: session.id === activeSessionId ? 'var(--bg3)' : 'transparent',
+                  border: session.id === activeSessionId ? '1px solid var(--border)' : '1px solid transparent',
+                }}
               >
-                ✕
-              </button>
-            </div>
-          ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                  <span>💬</span>
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem', color: session.id === activeSessionId ? 'var(--t1)' : 'var(--t2)' }}>
+                    {session.title}
+                  </span>
+                </div>
+                <button 
+                  onClick={(e) => deleteSession(e, session.id)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--t3)', cursor: 'pointer', padding: '2px 5px', borderRadius: '4px' }}
+                  title="ลบแชท"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
       )}
 
       {/* Main Chat Area */}
-      <div className="chat-container" style={{ flex: 1, border: 'none', borderRadius: 0, height: '100%', minWidth: 0, transition: 'all 0.3s ease' }}>
+      <div className="chat-container" style={{ flex: 1, border: 'none', borderRadius: 0, height: '100%', maxHeight: 'none', minWidth: 0, transition: 'all 0.3s ease', display: 'flex', flexDirection: 'column' }}>
         <div className="chat-header" style={{display: 'flex', gap: '15px', padding: '15px 20px', borderBottom: '1px solid var(--border)', alignItems: 'center'}}>
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -304,7 +310,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
           <h3 style={{margin: 0, fontSize: '1rem', color: 'var(--t1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{activeSession?.title || "AI แชทบอท"}</h3>
         </div>
         
-        <div className="chat-messages" style={{ height: 'calc(100% - 130px)' }}>
+        <div className="chat-messages" style={{ flex: 1, overflowY: 'auto' }}>
           {messages.length === 1 && messages[0].role === 'assistant' && (
             <div className="chat-empty">
               <div className="chat-empty-icon" style={{ fontSize: '3rem', marginBottom: '1rem' }}>🤖</div>
