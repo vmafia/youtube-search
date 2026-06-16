@@ -281,6 +281,60 @@ def bulk_index():
         }
     }), 200
 
+@app.route("/api/bulk-sync-cc", methods=["POST"])
+def bulk_sync_cc():
+    """
+    Fast sync of native YouTube CCs. Skips videos that already exist in DB.
+    Uses youtube-transcript-api and bulk Turso inserts.
+    """
+    data = request.get_json() or {}
+    video_ids = data.get("video_ids", [])
+    
+    if not video_ids:
+        return jsonify({"error": "video_ids is required"}), 400
+        
+    try:
+        from backend.utils.search_db import get_db_stats
+        from backend.utils.youtube import YouTubeTranscriptApi, save_transcript_to_sqlite
+        
+        # Get existing transcribed IDs to skip
+        stats = get_db_stats()
+        existing_ids = set(stats.get("transcribed_ids", []))
+        
+        success = 0
+        failed = 0
+        skipped = 0
+        
+        # Limit to 500 per request to prevent Vercel 10s timeout
+        # Actually Vercel free tier has 10s timeout, so we should limit to ~10-20 to be safe
+        video_ids = video_ids[:20] 
+        
+        for vid in video_ids:
+            if vid in existing_ids:
+                skipped += 1
+                continue
+                
+            try:
+                raw_transcript = YouTubeTranscriptApi.get_transcript(vid, languages=['th'])
+                # Format to our schema
+                transcript = youtube_client._format_transcript(raw_transcript)
+                # Save to Turso using Batch write
+                save_transcript_to_sqlite(vid, transcript)
+                success += 1
+            except Exception as e:
+                logger.info(f"CC Sync failed for {vid} (Maybe no CC): {str(e)}")
+                failed += 1
+                
+        return jsonify({
+            "success": success,
+            "failed": failed,
+            "skipped": skipped,
+            "processed": len(video_ids)
+        }), 200
+    except Exception as e:
+        logger.error(f"Bulk CC Sync error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/debug/cache", methods=["GET"])
 def debug_cache():
     import os

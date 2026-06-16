@@ -242,6 +242,39 @@ export function App() {
     }
   };
 
+  const handleBulkSyncCC = async () => {
+    if (videos.length === 0) {
+      addToast("ไม่พบวิดีโอ กรุณาโหลดช่อง YouTube ก่อน", "error");
+      return;
+    }
+    if (!confirm("ต้องการดูด CC ภาษาไทยจากคลิปทั้งหมดลงฐานข้อมูลหรือไม่?\nระบบจะใช้เวลาครู่หนึ่ง และจะข้ามคลิปที่มีในระบบแล้วอัตโนมัติ")) {
+      return;
+    }
+    
+    setLoading(true);
+    addToast("กำลังดึงข้อมูล CC... กรุณารอสักครู่ (อาจใช้เวลาหลายวินาที)", "success");
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/bulk-sync-cc`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_ids: videos.map((v) => v.id) }),
+      });
+      
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "เกิดข้อผิดพลาดในการดูด CC");
+      }
+      
+      addToast(`🎉 ดูดสำเร็จ ${data.success} คลิป! (ข้าม ${data.skipped} คลิปที่มีแล้ว, ล้มเหลว/ไม่มี CC ${data.failed} คลิป)`, "success");
+      fetchStats(); // Update stats after sync
+    } catch (err: any) {
+      addToast(err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSearch = async (e?: React.FormEvent, customQuery?: string) => {
     if (e) e.preventDefault();
     const queryToUse = customQuery !== undefined ? customQuery : searchQuery;
@@ -798,6 +831,32 @@ export function App() {
           )}
 
           {/* Dashboard Stats */}
+          <div style={{ marginBottom: "1.5rem" }}>
+            <button
+              onClick={handleBulkSyncCC}
+              disabled={loading || videos.length === 0}
+              style={{
+                width: "100%",
+                padding: "1rem",
+                background: "linear-gradient(135deg, var(--teal), #1d4ed8)",
+                color: "white",
+                border: "none",
+                borderRadius: "12px",
+                fontWeight: "600",
+                fontSize: "1rem",
+                cursor: loading ? "not-allowed" : "pointer",
+                boxShadow: "0 4px 15px rgba(20, 184, 166, 0.3)",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                gap: "10px",
+                transition: "all 0.2s ease"
+              }}
+            >
+              <span>⚡</span> ดึง CC ภาษาไทยจาก YouTube ทั้งช่องอัตโนมัติ (ความเร็วแสง)
+            </button>
+          </div>
+
           <div className="dashboard-grid">
             <div className="stat-card">
               <span className="stat-label">วิดีโอทั้งหมด</span>
