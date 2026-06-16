@@ -73,7 +73,17 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(typeof window !== "undefined" ? window.innerWidth > 768 : true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Handle window resize for responsive sidebar
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 768) setIsSidebarOpen(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Save to localStorage whenever sessions change
   useEffect(() => {
@@ -236,8 +246,9 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
     <div className="chat-layout-wrapper" style={{ display: 'flex', height: '650px', background: 'var(--bg2)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden' }}>
       
       {/* Sidebar */}
-      <div className="chat-sidebar" style={{ width: '260px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg1)' }}>
-        <div style={{ padding: '15px' }}>
+      {isSidebarOpen && (
+        <div className="chat-sidebar" style={{ width: '260px', minWidth: '260px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg1)', transition: 'all 0.3s ease' }}>
+          <div style={{ padding: '15px' }}>
           <button 
             onClick={createNewSession}
             style={{ width: '100%', padding: '10px', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
@@ -278,11 +289,19 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
           ))}
         </div>
       </div>
+      )}
 
       {/* Main Chat Area */}
-      <div className="chat-container" style={{ flex: 1, border: 'none', borderRadius: 0, height: '100%' }}>
-        <div className="chat-header" style={{display: 'flex', justifyContent: 'space-between', padding: '15px 20px', borderBottom: '1px solid var(--border)', alignItems: 'center'}}>
-          <h3 style={{margin: 0, fontSize: '1rem', color: 'var(--t1)'}}>{activeSession?.title || "AI แชทบอท"}</h3>
+      <div className="chat-container" style={{ flex: 1, border: 'none', borderRadius: 0, height: '100%', minWidth: 0, transition: 'all 0.3s ease' }}>
+        <div className="chat-header" style={{display: 'flex', gap: '15px', padding: '15px 20px', borderBottom: '1px solid var(--border)', alignItems: 'center'}}>
+          <button 
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--t1)', fontSize: '1.1rem', cursor: 'pointer', padding: '4px 8px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            title="ซ่อน/แสดงแถบห้องแชท"
+          >
+            {isSidebarOpen ? '◀' : '☰'}
+          </button>
+          <h3 style={{margin: 0, fontSize: '1rem', color: 'var(--t1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{activeSession?.title || "AI แชทบอท"}</h3>
         </div>
         
         <div className="chat-messages" style={{ height: 'calc(100% - 130px)' }}>
