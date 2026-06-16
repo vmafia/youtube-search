@@ -73,13 +73,20 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(typeof window !== "undefined" ? window.innerWidth <= 768 : false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(typeof window !== "undefined" ? window.innerWidth > 768 : true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Handle window resize for responsive sidebar
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth <= 768) setIsSidebarOpen(false);
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -246,7 +253,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
     <div className="chat-layout-wrapper" style={{ display: 'flex', height: 'calc(100vh - 200px)', minHeight: '500px', maxHeight: '800px', background: 'var(--bg2)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden', position: 'relative' }}>
       
       {/* Sidebar Overlay Backdrop for Mobile */}
-      {isSidebarOpen && typeof window !== "undefined" && window.innerWidth <= 768 && (
+      {isSidebarOpen && isMobile && (
         <div 
           onClick={() => setIsSidebarOpen(false)}
           style={{
@@ -265,7 +272,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
       
       {/* Sidebar */}
       {isSidebarOpen && (
-        <div className="chat-sidebar" style={{ width: '260px', minWidth: '260px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg1)', transition: 'all 0.3s ease', position: window.innerWidth <= 768 ? 'absolute' : 'relative', height: '100%', zIndex: 10 }}>
+        <div className="chat-sidebar" style={{ width: '260px', minWidth: '260px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg1)', transition: 'all 0.3s ease', position: isMobile ? 'absolute' : 'relative', left: 0, top: 0, height: '100%', zIndex: 10 }}>
           <div style={{ padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <button 
               onClick={createNewSession}
@@ -273,7 +280,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
             >
               <span>+</span> แชทใหม่
             </button>
-            {window.innerWidth <= 768 && (
+            {isMobile && (
               <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--t1)', fontSize: '1.2rem', padding: '0 0 0 10px', cursor: 'pointer' }}>✕</button>
             )}
           </div>
@@ -283,7 +290,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
                 key={session.id}
                 onClick={() => {
                   setActiveSessionId(session.id);
-                  if (window.innerWidth <= 768) setIsSidebarOpen(false);
+                  if (isMobile) setIsSidebarOpen(false);
                 }}
                 style={{
                   padding: '10px 12px',
