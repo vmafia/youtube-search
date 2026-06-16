@@ -105,11 +105,22 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
                     newMsgs[newMsgs.length - 1].context = data.context_used;
                     return newMsgs;
                   });
+                } else if (data.type === 'status') {
+                  setMessages(prev => {
+                    const newMsgs = [...prev];
+                    const lastMsg = newMsgs[newMsgs.length - 1];
+                    lastMsg.content = `⏳ ${data.message}`;
+                    return newMsgs;
+                  });
                 } else if (data.type === 'chunk') {
                   assistantText += data.content;
                   setMessages(prev => {
                     const newMsgs = [...prev];
-                    newMsgs[newMsgs.length - 1].content = assistantText;
+                    const lastMsg = newMsgs[newMsgs.length - 1];
+                    if (lastMsg.content.startsWith('⏳')) {
+                      lastMsg.content = ''; // Clear the status message
+                    }
+                    lastMsg.content += data.content;
                     return newMsgs;
                   });
                 }
@@ -188,7 +199,11 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
             </div>
             <div className="chat-message-content">
               <div className="chat-bubble" style={{ whiteSpace: 'pre-wrap' }}>
-                {msg.content || (loading && i === messages.length - 1 ? <span className="typing-indicator"><span className="dot"></span><span className="dot"></span><span className="dot"></span></span> : '')}
+                {msg.content === '' ? (
+                  <span style={{ fontStyle: 'italic', color: '#888' }}>กำลังประมวลผล...</span>
+                ) : (
+                  msg.content
+                )}
               </div>
               
               {/* Show referenced videos if AI used context */}

@@ -333,120 +333,105 @@ def chat():
         # Optional: Channel filter
         channel_name = data.get("channel_name", "").strip()
 
-        # Step 1: Extract keywords from the question using LLM for "ฉลาดเกินเบอร์" RAG
-        # This prevents full table scans and handles Thai word boundaries natively,
-        # taking ~0.5s but saving millions of DB reads and Vercel timeouts.
-        extraction_prompt = [
-            {"role": "system", "content": "You are a search query extractor. Extract 2 to 4 most important distinct keywords or short phrases from the user's question. Do not include question words (e.g. คือ, อะไร, ทำไม). Return ONLY the keywords separated by spaces. Example input: 'ตรรกศาสตร์ที่ใช้ได้และใช้ไม่ได้' -> Example output: 'ตรรกศาสตร์ ใช้ได้ ใช้ไม่ได้'"},
-            {"role": "user", "content": last_message}
-        ]
-        
-        try:
-            llm_response = generate_completion(extraction_prompt, stream=False)
-            if llm_response and "error" not in llm_response.lower():
-                keywords = llm_response.strip()
-                logger.info(f"LLM extracted keywords: {keywords}")
-            else:
-                keywords = last_message
-        except Exception as e:
-            logger.error(f"LLM keyword extraction failed: {e}")
-            keywords = last_message
-            
-        # Fallback basic stopword removal just in case
-        stopwords = ["คือ", "อะไร", "ไหม", "ครับ", "ค่ะ", "ช่วยบอก", 
-"หน่อย", "อยากรู้", "เรื่อง", "ว่า", "ยังไง", "บ้าง", 
-"ทำไม", "?", "ในคลิป", "อาจารย์"]
-        for word in stopwords:
-            keywords = keywords.replace(word, " ")
-        keywords = " ".join(keywords.split())
-        
-        # Step 2: Search transcripts
-        logger.info(f"RAG searching for keywords: {keywords}")
-        
-        from backend.utils.search_db import search_sqlite_fts
-        
-        # We search the SQLite FTS database directly! Lightning fast.
-        results = search_sqlite_fts(keywords, limit=5)
-        
-        # If no results, retry by splitting keywords into individual words and OR-ing them
-        if not results:
-            words = [w for w in keywords.split() if len(w) > 1]
-            if words:
-                logger.info(f"RAG search with AND returned 0 results. Retrying with OR of words: {words}")
-                results = search_sqlite_fts(words, limit=5)
-        
-        top_matches = results
-        context_text = ""
-        
-        if top_matches:
-            # Prepare matches for batch context fetching (window of 30 seconds before/after)
-            context_items = []
-            for r in top_matches:
-                vid = r["video_id"]
-                for m in r["matches"][:2]:
-                    context_items.append({
-                        "video_id": vid,
-                        "start": m["start"],
-                        "text": m["text"]
-                    })
-            
-            from backend.utils.search_db import fetch_batch_surrounding_context
-            context_map = fetch_batch_surrounding_context(context_items, window_seconds=30)
-            
-            context_text = "อ้างอิงจากข้อมูลซับไตเติ้ลในฐานข้อมูล:\n"
-            for r in top_matches:
-                vid = r["video_id"]
-                for m in r["matches"][:2]:
-                    merged_text = context_map.get((vid, m["start"]), m["text"])
-                    context_text += f"- วิดีโอ {vid} (นาทีที่ {m['timestamp']}): \"{merged_text}\"\n"
-        else:
-            context_text = "ไม่มีข้อมูลในฐานข้อมูลที่ตรงกับคำถามนี้"
-
-        # Step 3: Build the final prompt and call the LLM
-        system_prompt = f"""คุณคือผู้ช่วย AI ผู้เชี่ยวชาญด้านอิสลามศึกษา คุณมีหน้าที่ตอบคำถามโดยอิงจากทั้ง 'บริบทข้อมูลซับไตเติ้ลวิดีโอ' และ 'ความรู้ทั่วไปเชิงลึก'
-        
-บริบทข้อมูลที่ค้นหาพบ:
-{context_text}
-
-กฎในการตอบ:
-1. หากมีบริบทข้อมูล ให้ใช้อธิบายเป็นหลัก **และต้องระบุเสมอว่าอ้างอิงมาจากวิดีโอ ID ใด และช่วงเวลาใด (นาทีที่เท่าไหร่)** สอดแทรกไปในการอธิบายเพื่อให้ดูน่าเชื่อถือ
-2. หากไม่มีบริบทข้อมูลที่ตรงกับคำถาม **ห้ามตอบแค่ว่า "ไม่พบข้อมูล" เด็ดขาด!** ให้คุณใช้ความรู้เชิงลึกของคุณอธิบายคำตอบอย่างละเอียดและฉลาดที่สุด (เสมือนอาจารย์กำลังสอน) แล้วค่อยทิ้งท้ายสั้นๆ ว่า "(หมายเหตุ: ค้นหาไม่พบเนื้อหานี้ในคลิปวิดีโอปัจจุบัน)"
-3. ห้ามแต่งเติมข้อมูลที่บิดเบือนจากหลักศาสนา
-4. ใช้ภาษาที่สุภาพ เป็นธรรมชาติ เข้าใจง่าย และลึกซึ้ง
-5. ห้ามจัดรูปแบบ Markdown (เช่น ตัวหนา ตัวเอียง หรือหัวข้อ) ให้พิมพ์เว้นวรรคและขึ้นบรรทัดใหม่ธรรมดาเพื่อให้มนุษย์อ่านง่ายที่สุด
-6. ห้ามสร้าง "ลิงก์ (URL)" วิดีโอด้วยตัวเองเด็ดขาด ให้พิมพ์บอกแค่วิดีโอ ID และเวลาเป็นข้อความธรรมดา
-"""
-        
-        # Inject our system prompt at the beginning of the conversation
-        final_messages = [{"role": "system", "content": system_prompt}]
-        
-        # We only pass the last 5 messages to save tokens and context limit
-        final_messages.extend(sanitized_messages[-5:])
-        
-        # Generate the final answer using streaming
-        answer_stream = generate_completion(final_messages, temperature=0.7, stream=True)
-        
+        # Start of streaming response
         from flask import Response, stream_with_context
         import json
         
         def generate():
-            # First yield the context used so frontend can display it
-            initial_data = {
-                "type": "context",
-                "context_used": top_matches,
-                "keywords_searched": keywords
-            }
-            yield f"data: {json.dumps(initial_data, ensure_ascii=False)}\n\n"
+            from backend.utils.llm import generate_completion
+            from backend.utils.search_db import search_sqlite_fts, fetch_batch_surrounding_context
             
             try:
+                # Step 1: Extract keywords
+                yield f"data: {json.dumps({'type': 'status', 'message': 'กำลังวิเคราะห์คำถาม...'}, ensure_ascii=False)}\n\n"
+                
+                extraction_prompt = [
+                    {"role": "system", "content": "You are a search query extractor. Extract 2 to 4 most important distinct keywords or short phrases from the user's question. Do not include question words (e.g. คือ, อะไร, ทำไม). Return ONLY the keywords separated by spaces. Example input: 'ตรรกศาสตร์ที่ใช้ได้และใช้ไม่ได้' -> Example output: 'ตรรกศาสตร์ ใช้ได้ ใช้ไม่ได้'"},
+                    {"role": "user", "content": last_message}
+                ]
+                
+                try:
+                    llm_response = generate_completion(extraction_prompt, stream=False)
+                    if llm_response and "error" not in llm_response.lower():
+                        keywords = llm_response.strip()
+                        logger.info(f"LLM extracted keywords: {keywords}")
+                    else:
+                        keywords = last_message
+                except Exception as e:
+                    logger.error(f"LLM keyword extraction failed: {e}")
+                    keywords = last_message
+                    
+                stopwords = ["คือ", "อะไร", "ไหม", "ครับ", "ค่ะ", "ช่วยบอก", "หน่อย", "อยากรู้", "เรื่อง", "ว่า", "ยังไง", "บ้าง", "ทำไม", "?", "ในคลิป", "อาจารย์"]
+                for word in stopwords:
+                    keywords = keywords.replace(word, " ")
+                keywords = " ".join(keywords.split())
+                
+                # Step 2: Search transcripts
+                yield f"data: {json.dumps({'type': 'status', 'message': f'กำลังค้นหาฐานข้อมูลด้วยคำว่า: {keywords}'}, ensure_ascii=False)}\n\n"
+                logger.info(f"RAG searching for keywords: {keywords}")
+                
+                results = search_sqlite_fts(keywords, limit=5)
+                
+                if not results:
+                    words = [w for w in keywords.split() if len(w) > 1]
+                    if words:
+                        logger.info(f"RAG search with AND returned 0 results. Retrying with OR of words: {words}")
+                        results = search_sqlite_fts(words, limit=5)
+                
+                top_matches = results
+                context_text = ""
+                
+                if top_matches:
+                    yield f"data: {json.dumps({'type': 'status', 'message': 'กำลังอ่านซับไตเติ้ลจากคลิปที่เกี่ยวข้อง...'}, ensure_ascii=False)}\n\n"
+                    context_items = []
+                    for r in top_matches:
+                        vid = r["video_id"]
+                        for m in r["matches"][:2]:
+                            context_items.append({"video_id": vid, "start": m["start"], "text": m["text"]})
+                    
+                    context_map = fetch_batch_surrounding_context(context_items, window_seconds=30)
+                    
+                    context_text = "อ้างอิงจากข้อมูลซับไตเติ้ลในฐานข้อมูล:\n"
+                    for r in top_matches:
+                        vid = r["video_id"]
+                        title = r.get("title", f"วิดีโอ {vid}")
+                        for m in r["matches"][:2]:
+                            merged_text = context_map.get((vid, m["start"]), m["text"])
+                            context_text += f"- ชื่อคลิป: \"{title}\" (นาทีที่ {m['timestamp']}): \"{merged_text}\"\n"
+                else:
+                    context_text = "ไม่มีข้อมูลในฐานข้อมูลที่ตรงกับคำถามนี้"
+        
+                # Step 3: Build the final prompt and call the LLM
+                yield f"data: {json.dumps({'type': 'status', 'message': 'กำลังเรียบเรียงคำตอบ...'}, ensure_ascii=False)}\n\n"
+                system_prompt = f"""คุณคือผู้ช่วย AI ผู้เชี่ยวชาญด้านอิสลามศึกษา คุณมีหน้าที่ตอบคำถามโดยอิงจากทั้ง 'บริบทข้อมูลซับไตเติ้ลวิดีโอ' และ 'ความรู้ทั่วไปเชิงลึก'
+                
+บริบทข้อมูลที่ค้นหาพบ:
+{context_text}
+        
+กฎในการตอบ:
+1. หากมีบริบทข้อมูล ให้ใช้อธิบายเป็นหลัก **และต้องระบุเสมอว่าอ้างอิงมาจากคลิปชื่ออะไร และช่วงเวลาใด (นาทีที่เท่าไหร่)** สอดแทรกไปในการอธิบายเพื่อให้ดูน่าเชื่อถือ
+2. หากไม่มีบริบทข้อมูลที่ตรงกับคำถาม **ห้ามตอบแค่ว่า "ไม่พบข้อมูล" เด็ดขาด!** ให้คุณใช้ความรู้เชิงลึกของคุณอธิบายคำตอบอย่างละเอียดและฉลาดที่สุด (เสมือนอาจารย์กำลังสอน) แล้วค่อยทิ้งท้ายสั้นๆ ว่า "(หมายเหตุ: ค้นหาไม่พบเนื้อหานี้ในคลิปวิดีโอปัจจุบัน)"
+3. ห้ามแต่งเติมข้อมูลที่บิดเบือนจากหลักศาสนา
+4. ใช้ภาษาที่สุภาพ เป็นธรรมชาติ เข้าใจง่าย และลึกซึ้ง
+5. ห้ามจัดรูปแบบ Markdown (เช่น ตัวหนา ตัวเอียง หรือหัวข้อ) ให้พิมพ์เว้นวรรคและขึ้นบรรทัดใหม่ธรรมดาเพื่อให้มนุษย์อ่านง่ายที่สุด
+6. **ห้ามพิมพ์ Video ID (เช่น 8hXtomOsPbs) ออกมาให้ผู้ใช้เห็นเด็ดขาด** ให้พิมพ์เรียกชื่อคลิปตรงๆ เลย เช่น "ในคลิปวิดีโอเรื่อง [ชื่อคลิป]..." เพื่อให้มนุษย์อ่านเข้าใจง่าย
+"""
+                
+                final_messages = [{"role": "system", "content": system_prompt}]
+                final_messages.extend(sanitized_messages[-5:])
+                
+                # First yield the context used so frontend can display it
+                yield f"data: {json.dumps({'type': 'context', 'context_used': top_matches, 'keywords_searched': keywords}, ensure_ascii=False)}\n\n"
+                
                 # Then yield chunks of the answer
+                answer_stream = generate_completion(final_messages, temperature=0.7, stream=True)
                 for chunk in answer_stream:
                     if chunk:
-                        chunk_data = {"type": "chunk", "content": chunk}
-                        yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk}, ensure_ascii=False)}\n\n"
+                        
             except Exception as e:
                 logger.error(f"Stream error: {e}")
-                err_data = {"type": "chunk", "content": f"\n\n[ระบบขัดข้อง: เซิร์ฟเวอร์ AI ล่มหรือโควต้าเต็ม กรุณาลองใหม่อีกครั้ง: {str(e)}]"}
+                err_data = {"type": "chunk", "content": f"\n\n[ระบบขัดข้อง: เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง: {str(e)}]"}
                 yield f"data: {json.dumps(err_data, ensure_ascii=False)}\n\n"
                 
             # Finally send done
