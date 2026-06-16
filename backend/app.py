@@ -333,11 +333,29 @@ def chat():
         # Optional: Channel filter
         channel_name = data.get("channel_name", "").strip()
 
-        # Step 1: Extract keywords from the question
-        # To make it lightning fast, we just use the user's question directly,
-        # and remove common stopwords
-        keywords = last_message
-        stopwords = ["คือ", "อะไร", "ไหม", "ครับ", "ค่ะ", "ช่วยบอก", "หน่อย", "อยากรู้", "เรื่อง", "ว่า", "ยังไง", "บ้าง", "ทำไม", "?", "ในคลิป", "อาจารย์"]
+        # Step 1: Extract keywords from the question using LLM for "ฉลาดเกินเบอร์" RAG
+        # This prevents full table scans and handles Thai word boundaries natively,
+        # taking ~0.5s but saving millions of DB reads and Vercel timeouts.
+        extraction_prompt = [
+            {"role": "system", "content": "You are a search query extractor. Extract 2 to 4 most important distinct keywords or short phrases from the user's question. Do not include question words (e.g. คือ, อะไร, ทำไม). Return ONLY the keywords separated by spaces. Example input: 'ตรรกศาสตร์ที่ใช้ได้และใช้ไม่ได้' -> Example output: 'ตรรกศาสตร์ ใช้ได้ ใช้ไม่ได้'"},
+            {"role": "user", "content": last_message}
+        ]
+        
+        try:
+            llm_response = generate_completion(extraction_prompt, stream=False)
+            if llm_response and "error" not in llm_response.lower():
+                keywords = llm_response.strip()
+                logger.info(f"LLM extracted keywords: {keywords}")
+            else:
+                keywords = last_message
+        except Exception as e:
+            logger.error(f"LLM keyword extraction failed: {e}")
+            keywords = last_message
+            
+        # Fallback basic stopword removal just in case
+        stopwords = ["คือ", "อะไร", "ไหม", "ครับ", "ค่ะ", "ช่วยบอก", 
+"หน่อย", "อยากรู้", "เรื่อง", "ว่า", "ยังไง", "บ้าง", 
+"ทำไม", "?", "ในคลิป", "อาจารย์"]
         for word in stopwords:
             keywords = keywords.replace(word, " ")
         keywords = " ".join(keywords.split())
@@ -385,18 +403,18 @@ def chat():
             context_text = "ไม่มีข้อมูลในฐานข้อมูลที่ตรงกับคำถามนี้"
 
         # Step 3: Build the final prompt and call the LLM
-        system_prompt = f"""คุณคือผู้ช่วย AI ผู้เชี่ยวชาญด้านอิสลามศึกษา คุณมีหน้าที่ตอบคำถามโดยอ้างอิงจากบริบทข้อมูลซับไตเติ้ลวิดีโอ (YouTube Transcripts) ที่ระบบค้นหามาให้เท่านั้น
+        system_prompt = f"""คุณคือผู้ช่วย AI ผู้เชี่ยวชาญด้านอิสลามศึกษา คุณมีหน้าที่ตอบคำถามโดยอิงจากทั้ง 'บริบทข้อมูลซับไตเติ้ลวิดีโอ' และ 'ความรู้ทั่วไปเชิงลึก'
         
 บริบทข้อมูลที่ค้นหาพบ:
 {context_text}
 
 กฎในการตอบ:
-1. ให้ตอบคำถามโดยอิงจาก 'บริบทข้อมูลที่ค้นหาพบ' เป็นหลัก
-2. หากในบริบทข้อมูลไม่มีเนื้อหาที่ตอบคำถามได้ ให้ตอบตรงๆ ว่า "ไม่พบข้อมูลนี้ในฐานข้อมูลคลิปวิดีโอ" หรือใช้ความรู้ทั่วไปเสริมได้เล็กน้อยแต่ต้องบอกให้ชัดเจน
+1. หากมีบริบทข้อมูล ให้ใช้อธิบายเป็นหลัก
+2. หากไม่มีบริบทข้อมูลที่ตรงกับคำถาม **ห้ามตอบแค่ว่า "ไม่พบข้อมูล" เด็ดขาด!** ให้คุณใช้ความรู้เชิงลึกของคุณอธิบายคำตอบอย่างละเอียดและฉลาดที่สุด (เสมือนอาจารย์กำลังสอน) แล้วค่อยทิ้งท้ายสั้นๆ ว่า "(หมายเหตุ: ค้นหาไม่พบเนื้อหานี้ในคลิปวิดีโอปัจจุบัน)"
 3. ห้ามแต่งเติมข้อมูลที่บิดเบือนจากหลักศาสนา
-4. ใช้ภาษาที่สุภาพ เป็นธรรมชาติ และเข้าใจง่าย
+4. ใช้ภาษาที่สุภาพ เป็นธรรมชาติ เข้าใจง่าย และลึกซึ้ง
 5. ห้ามจัดรูปแบบ Markdown (เช่น ตัวหนา ตัวเอียง หรือหัวข้อ) ให้พิมพ์เว้นวรรคและขึ้นบรรทัดใหม่ธรรมดาเพื่อให้มนุษย์อ่านง่ายที่สุด
-6. ห้ามสร้างลิงก์อ้างอิงวิดีโอด้วยตัวเองเด็ดขาด (เพราะระบบมี UI แนบการ์ดวิดีโอให้อัตโนมัติอยู่แล้ว)
+6. ห้ามสร้างลิงก์อ้างอิงวิดีโอด้วยตัวเองเด็ดขาด
 """
         
         # Inject our system prompt at the beginning of the conversation
