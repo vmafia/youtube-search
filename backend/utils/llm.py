@@ -38,10 +38,13 @@ def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=F
                 system_instruction += content + "\n"
             else:
                 logger.warning("Dropped unexpected system message in generate_completion history.")
-        elif role == "user":
-            gemini_messages.append(types.Content(role="user", parts=[types.Part.from_text(text=content)]))
-        elif role == "assistant" or role == "model":
-            gemini_messages.append(types.Content(role="model", parts=[types.Part.from_text(text=content)]))
+        elif role in ["user", "assistant", "model"]:
+            gemini_role = "user" if role == "user" else "model"
+            # If the last message is of the same role, merge them to avoid alternating error
+            if gemini_messages and gemini_messages[-1].role == gemini_role:
+                gemini_messages[-1].parts[0].text += "\n\n" + content
+            else:
+                gemini_messages.append(types.Content(role=gemini_role, parts=[types.Part.from_text(text=content)]))
             
     try:
         config = types.GenerateContentConfig(

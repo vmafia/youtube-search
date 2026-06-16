@@ -236,20 +236,16 @@ def fetch_batch_surrounding_context(items: List[Dict[str, Any]], window_seconds:
     # Build conditions
     conditions = []
     params = []
+    query_parts = []
     for item in items:
         vid = item["video_id"]
         start = item["start"]
         lower = max(0, start - window_seconds)
         upper = start + window_seconds
-        conditions.append("(video_id = ? AND start_time >= ? AND start_time <= ?)")
+        query_parts.append("SELECT video_id, start_time, text FROM transcripts WHERE video_id = ? AND start_time >= ? AND start_time <= ?")
         params.extend([vid, lower, upper])
         
-    sql = f"""
-        SELECT video_id, start_time, text 
-        FROM transcripts 
-        WHERE {" OR ".join(conditions)}
-        ORDER BY video_id, start_time
-    """
+    sql = " UNION ALL ".join(query_parts)
     
     result_map = {}
     try:
