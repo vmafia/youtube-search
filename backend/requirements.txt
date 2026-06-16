@@ -10,3 +10,4 @@ firebase-admin==6.5.0
 yt-dlp
 libsql-client
 google-genai
+openai

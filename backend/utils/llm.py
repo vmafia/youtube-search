@@ -1,120 +1,50 @@
 import os
-import json
-import urllib.request
 import logging
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
 _client = None
 
-def generate_completion(messages, model="gpt-4o-mini", temperature=0.7, stream=False):
-    from google import genai
-    from google.genai import types
-    import os
-    import logging
-    
-    logger = logging.getLogger(__name__)
+def generate_completion(messages, model="deepseek-chat", temperature=0.7, stream=False):
+    """
+    Generate completion using DeepSeek API.
+    Fully compatible with OpenAI SDK.
+    """
     global _client
     
     if _client is None:
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY not found in environment variables.")
-        _client = genai.Client(api_key=api_key)
+            raise ValueError("DEEPSEEK_API_KEY not found in environment variables.")
+        # DeepSeek base URL
+        _client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
         
     client = _client
     
-    # Convert OpenAI message format to Gemini format
-    system_instruction = ""
-    gemini_messages = []
-    
-    # Defense-in-depth: Only allow the first message to be 'system' (constructed by backend)
-    # and strip any subsequent system messages.
-    for i, msg in enumerate(messages):
-        role = msg.get("role")
-        content = msg.get("content", "")
-        if role == "system":
-            if i == 0:
-                system_instruction += content + "\n"
-            else:
-                logger.warning("Dropped unexpected system message in generate_completion history.")
-        elif role in ["user", "assistant", "model"]:
-            gemini_role = "user" if role == "user" else "model"
-            # If the last message is of the same role, merge them to avoid alternating error
-            if gemini_messages and gemini_messages[-1].role == gemini_role:
-                gemini_messages[-1].parts[0].text += "\n\n" + content
-            else:
-                gemini_messages.append(types.Content(role=gemini_role, parts=[types.Part.from_text(text=content)]))
-                
-    # Gemini requires the conversation to START with a user message.
-    # If due to truncation or history the first message is 'model', drop it.
-    while gemini_messages and gemini_messages[0].role == "model":
-        gemini_messages.pop(0)
-            
     try:
-        config = types.GenerateContentConfig(
-            temperature=temperature,
-            system_instruction=system_instruction if system_instruction else None,
-            safety_settings=[
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-            ]
-        )
-        
-        models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-        
+        # DeepSeek (OpenAI compatible) handles messages directly without needing role merging
         if stream:
-            def generate_with_fallback():
-                for i, model_name in enumerate(models_to_try):
-                    chunks_yielded = 0
-                    try:
-                        response = client.models.generate_content_stream(
-                            model=model_name,
-                            contents=gemini_messages,
-                            config=config
-                        )
-                        for chunk in response:
-                            if chunk.text:
-                                yield chunk.text
-                                chunks_yielded += 1
-                        break # Success
-                    except Exception as e:
-                        logger.warning(f"Model {model_name} failed: {e}")
-                        if chunks_yielded > 0:
-                            raise Exception(f"Stream interrupted midway: {str(e)}")
-                        if i == len(models_to_try) - 1:
-                            raise
-                        continue
-            return generate_with_fallback()
+            def generate():
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    stream=True
+                )
+                for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            return generate()
         else:
-            for i, model_name in enumerate(models_to_try):
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=gemini_messages,
-                        config=config
-                    )
-                    return response.text
-                except Exception as e:
-                    logger.warning(f"Model {model_name} failed: {e}")
-                    if i == len(models_to_try) - 1:
-                        raise
-                    continue
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                stream=False
+            )
+            return response.choices[0].message.content
             
     except Exception as e:
-        logger.error(f"Gemini API Error: {str(e)}")
+        logger.error(f"DeepSeek API Error: {str(e)}")
         raise ValueError(f"เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ AI: {str(e)}")
