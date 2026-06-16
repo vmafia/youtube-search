@@ -154,20 +154,9 @@ export function App() {
       fetchStats();
       fetchTranscriptionStatus();
       
-      // Poll live status every 5 seconds (cheap, reads local cache file only)
-      const statusInterval = setInterval(() => {
-        fetchTranscriptionStatus();
-      }, 5000);
-      
-      // Poll stats only once every 60 seconds (reads database helper table)
-      const statsInterval = setInterval(() => {
-        fetchStats();
-      }, 60000);
-      
-      return () => {
-        clearInterval(statusInterval);
-        clearInterval(statsInterval);
-      };
+      // Disabled polling to prevent excessive database reads
+      // fetchTranscriptionStatus();
+      // fetchStats();
     }
   }, [activeTab, videos]);
 

@@ -40,28 +40,10 @@ async def migrate():
         USING fts5(video_id UNINDEXED, start_time UNINDEXED, timestamp UNINDEXED, text, norm_text)
     """)
     
-    # Check if data already exists
-    rs = await client.execute("SELECT COUNT(*) as count FROM transcripts_fts")
-    count = rs.rows[0][0]
-    if count > 0:
-        print(f"Table already has {count} rows. Dropping and recreating for a clean migration...")
-        await client.execute("DROP TABLE transcripts_fts")
-        await client.execute("DROP TABLE transcripts")
-        await client.execute("""
-            CREATE TABLE IF NOT EXISTS transcripts (
-                video_id TEXT,
-                start_time REAL,
-                timestamp TEXT,
-                text TEXT,
-                norm_text TEXT
-            )
-        """)
-        await client.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_video_start ON transcripts(video_id, start_time)")
-        await client.execute("CREATE INDEX IF NOT EXISTS idx_transcripts_video_id ON transcripts(video_id)")
-        await client.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS transcripts_fts 
-            USING fts5(video_id UNINDEXED, start_time UNINDEXED, timestamp UNINDEXED, text, norm_text)
-        """)
+    # Fetch already processed videos to resume
+    rs = await client.execute("SELECT DISTINCT video_id FROM transcripts")
+    existing_videos = set(row[0] for row in rs.rows)
+    print(f"Found {len(existing_videos)} videos already in the database. Resuming from where we left off...")
  
     data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache", "all_transcripts.json.gz")
     if not os.path.exists(data_path):
@@ -83,6 +65,8 @@ async def migrate():
     start_time = time.time()
     
     for vid, transcript in all_data.items():
+        if vid in existing_videos:
+            continue
         for line in transcript:
             start_sec = line.get("start", 0)
             if start_sec > 100000: start_sec /= 1000.0
@@ -105,7 +89,17 @@ async def migrate():
             ))
             
             if len(queries) >= BATCH_SIZE * 2:
-                await client.batch(queries)
+                retries = 3
+                while retries > 0:
+                    try:
+                        await client.batch(queries)
+                        break
+                    except Exception as e:
+                        print(f"Batch insert failed, retrying... ({e})")
+                        retries -= 1
+                        await asyncio.sleep(2)
+                if retries == 0:
+                    raise Exception("Failed to insert batch after 3 retries")
                 queries = []
                 await asyncio.sleep(0.1)
                 
@@ -116,7 +110,17 @@ async def migrate():
             
     # Flush remaining
     if queries:
-        await client.batch(queries)
+        retries = 3
+        while retries > 0:
+            try:
+                await client.batch(queries)
+                break
+            except Exception as e:
+                print(f"Final batch insert failed, retrying... ({e})")
+                retries -= 1
+                await asyncio.sleep(2)
+        if retries == 0:
+            raise Exception("Failed to insert final batch after 3 retries")
         
     print("Migration complete! Optimizing index...")
     await client.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES('optimize')")
