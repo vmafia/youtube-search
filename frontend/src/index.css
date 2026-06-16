@@ -880,7 +880,7 @@ body {
   background: rgba(30, 30, 30, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-top-left-radius: 4px;
-  color: var(--t1);
+  color: var(--text);
 }
 
 .chat-references {
@@ -941,7 +941,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 1rem 1.25rem;
-  color: var(--t1);
+  color: var(--text);
   font-family: inherit;
   font-size: 0.95rem;
   transition: all 0.2s ease;

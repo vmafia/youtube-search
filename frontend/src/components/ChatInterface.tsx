@@ -250,7 +250,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
   };
 
   return (
-    <div className="chat-layout-wrapper" style={{ display: 'flex', height: 'calc(100vh - 200px)', minHeight: '500px', maxHeight: '800px', background: 'var(--bg2)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden', position: 'relative' }}>
+    <div className="chat-layout-wrapper" style={{ display: 'flex', height: 'calc(100vh - 200px)', minHeight: '500px', maxHeight: '800px', background: 'var(--bg2)', borderRadius: '12px', border: '1px solid var(--br)', overflow: 'hidden', position: 'relative' }}>
       
       {/* Sidebar Overlay Backdrop for Mobile */}
       {isSidebarOpen && isMobile && (
@@ -272,16 +272,16 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
       
       {/* Sidebar */}
       {isSidebarOpen && (
-        <div className="chat-sidebar" style={{ width: '260px', minWidth: '260px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--bg1)', transition: 'all 0.3s ease', position: isMobile ? 'absolute' : 'relative', left: 0, top: 0, height: '100%', zIndex: 10 }}>
+        <div className="chat-sidebar" style={{ width: '260px', minWidth: '260px', borderRight: '1px solid var(--br)', display: 'flex', flexDirection: 'column', background: 'var(--bg)', transition: 'all 0.3s ease', position: isMobile ? 'absolute' : 'relative', left: 0, top: 0, height: '100%', zIndex: 10 }}>
           <div style={{ padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <button 
               onClick={createNewSession}
-              style={{ flex: 1, padding: '10px', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              style={{ flex: 1, padding: '10px', background: 'var(--acc)', color: '#000', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
               <span>+</span> แชทใหม่
             </button>
             {isMobile && (
-              <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--t1)', fontSize: '1.2rem', padding: '0 0 0 10px', cursor: 'pointer' }}>✕</button>
+              <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '1.2rem', padding: '0 0 0 10px', cursor: 'pointer' }}>✕</button>
             )}
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px 10px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -300,12 +300,12 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   background: session.id === activeSessionId ? 'var(--bg3)' : 'transparent',
-                  border: session.id === activeSessionId ? '1px solid var(--border)' : '1px solid transparent',
+                  border: session.id === activeSessionId ? '1px solid var(--br)' : '1px solid transparent',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
                   <span>💬</span>
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem', color: session.id === activeSessionId ? 'var(--t1)' : 'var(--t2)' }}>
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.9rem', color: session.id === activeSessionId ? 'var(--text)' : 'var(--t2)' }}>
                     {session.title}
                   </span>
                 </div>
@@ -324,15 +324,15 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
 
       {/* Main Chat Area */}
       <div className="chat-container" style={{ flex: 1, border: 'none', borderRadius: 0, height: '100%', maxHeight: 'none', minWidth: 0, transition: 'all 0.3s ease', display: 'flex', flexDirection: 'column' }}>
-        <div className="chat-header" style={{display: 'flex', gap: '15px', padding: '15px 20px', borderBottom: '1px solid var(--border)', alignItems: 'center'}}>
+        <div className="chat-header" style={{display: 'flex', gap: '15px', padding: '15px 20px', borderBottom: '1px solid var(--br)', alignItems: 'center'}}>
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--t1)', fontSize: '1.1rem', cursor: 'pointer', padding: '4px 8px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ background: 'var(--bg2)', border: '1px solid var(--br)', color: 'var(--text)', fontSize: '1.1rem', cursor: 'pointer', padding: '4px 8px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             title="ซ่อน/แสดงแถบห้องแชท"
           >
             {isSidebarOpen ? '◀' : '☰'}
           </button>
-          <h3 style={{margin: 0, fontSize: '1rem', color: 'var(--t1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{activeSession?.title || "AI แชทบอท"}</h3>
+          <h3 style={{margin: 0, fontSize: '1rem', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{activeSession?.title || "AI แชทบอท"}</h3>
         </div>
         
         <div className="chat-messages" style={{ flex: 1, overflowY: 'auto' }}>
@@ -374,7 +374,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
                             target="_blank" 
                             rel="noopener noreferrer"
                             className="ref-link"
-                            style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', background: 'var(--bg2)', padding: '8px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', background: 'var(--bg2)', padding: '8px', borderRadius: '8px', border: '1px solid var(--br)' }}
                           >
                             <img 
                               src={videoData?.thumbnail || `https://i.ytimg.com/vi/${ref.video_id}/mqdefault.jpg`} 
@@ -382,10 +382,10 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
                               style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px' }} 
                             />
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span style={{ color: 'var(--t1)', fontWeight: 500, fontSize: '0.9rem', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                              <span style={{ color: 'var(--text)', fontWeight: 500, fontSize: '0.9rem', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                 {videoData?.title || `วิดีโอ ${ref.video_id}`}
                               </span>
-                              <span style={{ color: 'var(--accent)', fontSize: '0.8rem' }}>
+                              <span style={{ color: 'var(--acc)', fontSize: '0.8rem' }}>
                                 ▶️ ดูคลิปเต็ม
                               </span>
                             </div>
