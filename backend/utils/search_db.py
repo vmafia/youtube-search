@@ -333,7 +333,7 @@ def get_db_stats() -> Dict[str, Any]:
             "transcribed_ids": []
         }
 
-def fetch_batch_surrounding_context(items: List[Dict[str, Any]], window_seconds: int = 30) -> Dict[tuple, str]:
+def fetch_batch_surrounding_context(items: List[Dict[str, Any]], window_seconds: int = 120) -> Dict[tuple, str]:
     """
     items is a list of dicts containing 'video_id' and 'start'.
     Returns a dict mapping (video_id, start) to the merged surrounding text.

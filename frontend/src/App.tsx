@@ -29,6 +29,8 @@ interface Toast {
   type: "success" | "error";
 }
 
+const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || "";
+
 const API_BASE = import.meta.env.VITE_API_URL || 
   (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
     ? "http://localhost:5000"
@@ -299,7 +301,10 @@ export function App() {
         
         const response = await fetch(`${API_BASE}/api/bulk-sync-cc`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${ADMIN_SECRET}`
+          },
           body: JSON.stringify({ video_ids: batchIds }),
         });
         
@@ -310,6 +315,15 @@ export function App() {
           skippedCount += data.skipped || 0;
         } else {
           failedCount += batchIds.length;
+          if (response.status === 401) {
+            addToast("รหัส Admin ไม่ถูกต้อง หรือไม่ได้ตั้งค่า VITE_ADMIN_SECRET", "error");
+            break;
+          }
+        }
+        
+        // Delay 1 second between batches to prevent spamming the backend
+        if (i + batchSize < pendingVideos.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
       

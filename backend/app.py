@@ -187,6 +187,7 @@ def load_all_transcripts():
     return global_transcripts_cache
 
 @app.route("/api/search", methods=["POST"])
+@limiter.limit("30 per minute")
 def search():
     data = request.get_json() or {}
     video_ids = data.get("video_ids", [])
@@ -258,6 +259,7 @@ def search():
 
 
 @app.route("/api/summarize-video", methods=["POST"])
+@limiter.limit("10 per minute")
 def summarize_video():
     """
     Summarize a video transcript using AI into 3 bullet points.
@@ -309,6 +311,10 @@ def bulk_index():
     ใช้สำหรับ batch ดึง transcript ล่วงหน้า ก่อนที่ผู้ใช้จะค้นหา
     เพื่อให้การค้นหาในอนาคตครอบคลุมทุกคลิปและเร็วขึ้น
     """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or auth_header != f"Bearer {Config.ADMIN_SECRET}":
+        return jsonify({"error": "Unauthorized. Invalid Admin Token."}), 401
+
     if Config.IS_VERCEL:
         return jsonify({"error": "Bulk indexing is not supported on Vercel (timeout limit). Run locally."}), 400
 
@@ -375,6 +381,10 @@ def bulk_sync_cc():
     Fast sync of native YouTube CCs. Skips videos that already exist in DB.
     Uses youtube-transcript-api and bulk Turso inserts.
     """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or auth_header != f"Bearer {Config.ADMIN_SECRET}":
+        return jsonify({"error": "Unauthorized. Invalid Admin Token."}), 401
+
     data = request.get_json() or {}
     video_ids = data.get("video_ids", [])
     
@@ -507,19 +517,48 @@ def chat():
                     keywords = keywords.replace(word, " ")
                 keywords = " ".join(keywords.split())
                 
-                # Step 2: Search transcripts
-                yield f"data: {json.dumps({'type': 'status', 'message': f'กำลังค้นหาฐานข้อมูลด้วยคำว่า: {keywords}'}, ensure_ascii=False)}\n\n"
+                # Step 2: Search transcripts (Hybrid)
+                yield f"data: {json.dumps({'type': 'status', 'message': f'กำลังวิเคราะห์ความหมายและค้นหา...'}, ensure_ascii=False)}\n\n"
                 logger.info(f"RAG searching for keywords: {keywords}")
                 
-                results = search_sqlite_fts(keywords, limit=5)
-                
-                if not results:
+                # 1. FTS Search
+                fts_results = search_sqlite_fts(keywords, limit=5)
+                if not fts_results:
                     words = [w for w in keywords.split() if len(w) > 1]
                     if words:
-                        logger.info(f"RAG search with AND returned 0 results. Retrying with OR of words: {words}")
-                        results = search_sqlite_fts(words, limit=5)
+                        fts_results = search_sqlite_fts(words, limit=5)
                 
-                top_matches = results
+                # 2. Vector Search (Semantic) using full user message
+                vector_results = []
+                gemini_key = Config.GEMINI_API_KEY
+                db_url = os.environ.get("TURSO_DATABASE_URL")
+                if gemini_key and db_url and "turso.io" in db_url:
+                    try:
+                        from backend.utils.youtube import generate_embeddings_gemini
+                        from backend.utils.search_db import search_vector
+                        query_embs = generate_embeddings_gemini([last_message], gemini_key)
+                        if query_embs:
+                            vector_results = search_vector(query_embs[0], limit=5)
+                    except Exception as ve:
+                        logger.error(f"Vector search in chat failed: {ve}")
+                
+                # Merge FTS and Vector (Hybrid)
+                merged_dict = {}
+                def add_to_merged(source_results):
+                    for item in source_results:
+                        vid = item["video_id"]
+                        if vid not in merged_dict:
+                            merged_dict[vid] = item
+                        else:
+                            merged_dict[vid]["matches"].extend(item["matches"])
+                            merged_dict[vid]["max_score"] = max(merged_dict[vid]["max_score"], item["max_score"])
+                
+                add_to_merged(fts_results)
+                add_to_merged(vector_results)
+                
+                combined_results = list(merged_dict.values())
+                combined_results.sort(key=lambda x: x["max_score"], reverse=True)
+                top_matches = combined_results[:5]
                 context_text = ""
                 
                 if top_matches:

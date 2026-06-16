@@ -562,14 +562,21 @@ class YouTubeClient:
                     except Exception:
                         pass
 
-                # Strategy 4: Any available transcript (first one found)
+                # Strategy 4: Any available transcript translated to Thai
                 if not transcript:
                     try:
                         for t in transcript_list:
                             try:
-                                transcript = _parse_fetched(t.fetch())
-                                logger.info(f"Got transcript for {video_id} (fallback lang={t.language_code})")
-                                break
+                                # Try translating to Thai first
+                                if t.is_translatable:
+                                    transcript = _parse_fetched(t.translate('th').fetch())
+                                    logger.info(f"Got translated transcript for {video_id} (original lang={t.language_code}, translated to th)")
+                                    break
+                                # If not translatable, only accept if it's English
+                                elif 'en' in t.language_code:
+                                    transcript = _parse_fetched(t.fetch())
+                                    logger.info(f"Got transcript for {video_id} (fallback lang={t.language_code})")
+                                    break
                             except Exception:
                                 continue
                     except Exception:
