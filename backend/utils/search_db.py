@@ -132,31 +132,8 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
         rs = client.execute(sql, params)
         rows = rs.rows
         
-        # If FTS MATCH returned no rows, fallback to substring LIKE query in the normalized column
-        # Querying transcripts table instead of transcripts_fts to prevent full table scans on FTS
-        if not rows and like_clauses:
-            like_video_filter = ""
-            query_params = like_params
-            if video_ids:
-                placeholders = ",".join("?" * len(video_ids))
-                like_video_filter = f" AND video_id IN ({placeholders})"
-                query_params = like_params + video_ids
-                
-            fallback_sql = f"""
-                SELECT 
-                    video_id, 
-                    start_time, 
-                    timestamp, 
-                    text, 
-                    0 as score
-                FROM transcripts
-                WHERE {" OR ".join(like_clauses)}
-                {like_video_filter}
-                LIMIT {limit * 3}
-            """
-            logger.info(f"FTS MATCH yielded 0 results. Falling back to LIKE query for terms: {queries}")
-            rs = client.execute(fallback_sql, query_params)
-            rows = rs.rows
+        # Removed LIKE fallback to prevent massive 1.6M row full table scans
+        # which consume millions of Turso reads and cause Vercel timeouts.
             
     except Exception as e:
         logger.error(f"Turso FTS5 error: {e}")
