@@ -154,9 +154,20 @@ export function App() {
       fetchStats();
       fetchTranscriptionStatus();
       
-      // Disabled polling to prevent excessive database reads
-      // fetchTranscriptionStatus();
-      // fetchStats();
+      // Poll live status every 5 seconds (cheap, reads local cache file only)
+      const statusInterval = setInterval(() => {
+        fetchTranscriptionStatus();
+      }, 5000);
+      
+      // Poll stats only once every 60 seconds (reads database helper table)
+      const statsInterval = setInterval(() => {
+        fetchStats();
+      }, 60000);
+      
+      return () => {
+        clearInterval(statusInterval);
+        clearInterval(statsInterval);
+      };
     }
   }, [activeTab, videos]);
 
@@ -362,8 +373,7 @@ export function App() {
   );
 
   return (
-    <div className="app dark">
-      <main>
+    <div className="container">
       {/* Toast container */}
       <div className="toast-container">
         {toasts.map((toast) => (
@@ -380,7 +390,7 @@ export function App() {
       </header>
 
       {/* Tabs */}
-      <div className="member-tabs">
+      <div className="tabs-nav">
         <button
           type="button"
           className={`tab-btn ${activeTab === "search" ? "active" : ""}`}
@@ -416,7 +426,7 @@ export function App() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              <button type="submit" className="btn btn-main" disabled={loading}>
+              <button type="submit" className="btn btn-primary" disabled={loading}>
                 {loading ? "กำลังค้นหา..." : "ค้นหา"}
               </button>
             </form>
@@ -484,7 +494,7 @@ export function App() {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-outline"
+                      className="btn btn-secondary"
                       style={{ height: "38px", padding: "0 1rem" }}
                       onClick={() => fetchVideos(channelName)}
                       disabled={loading}
@@ -606,24 +616,24 @@ export function App() {
               const isTranscriptMissing = (result as any).transcript_missing;
 
               return (
-                <div key={result.video_id} className="card card result-card">
-                  <div className="card card result-card-header">
+                <div key={result.video_id} className="result-card">
+                  <div className="result-card-header">
                     {thumbnail && (
                       <img
                         src={thumbnail}
                         alt={title}
-                        className="card card result-card-thumbnail"
+                        className="result-card-thumbnail"
                       />
                     )}
-                    <div className="card card result-card-info">
-                      <h3 className="card card result-card-title">
+                    <div className="result-card-info">
+                      <h3 className="result-card-title">
                         {title}
                       </h3>
-                      <div className="card card result-card-actions">
+                      <div className="result-card-actions">
                         {!isTranscriptMissing && (
                           <button
                             type="button"
-                            className="card card result-card-btn"
+                            className="result-card-btn"
                             onClick={() => fetchFullTranscript(result.video_id)}
                           >
                             📖 ดูคำแปล/สคริปต์เต็ม
@@ -633,7 +643,7 @@ export function App() {
                           href={`https://youtu.be/${result.video_id}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="card card result-card-btn"
+                          className="result-card-btn"
                           style={{ textDecoration: "none" }}
                         >
                           🔗 เปิดใน YouTube
@@ -789,17 +799,17 @@ export function App() {
 
           {/* Dashboard Stats */}
           <div className="dashboard-grid">
-            <div className="card stat-card">
+            <div className="stat-card">
               <span className="stat-label">วิดีโอทั้งหมด</span>
               <span className="stat-value">{videos.length} คลิป</span>
             </div>
-            <div className="card stat-card">
+            <div className="stat-card">
               <span className="stat-label">มีสคริปต์พร้อมค้นหาแล้ว</span>
               <span className="stat-value" style={{ color: "var(--success)" }}>
                 {statsLoading ? "..." : `${stats?.transcribed_count || 0} คลิป`}
               </span>
             </div>
-            <div className="card stat-card">
+            <div className="stat-card">
               <span className="stat-label">รอคิวแกะเสียง</span>
               <span className="stat-value" style={{ color: "#f59e0b" }}>
                 {statsLoading ? "..." : `${videos.length > 0 && stats ? Math.max(0, videos.length - stats.transcribed_count) : 0} คลิป`}
@@ -838,7 +848,7 @@ export function App() {
           </div>
 
           {/* Video List Card */}
-          <div className="card dashboard-list-card">
+          <div className="dashboard-list-card">
             <div className="dashboard-list-header">
               <h3 style={{ fontSize: "1rem", fontWeight: "600", color: "var(--text)" }}>รายการวิดีโอและสถานะสคริปต์</h3>
               <input
@@ -852,24 +862,24 @@ export function App() {
             </div>
 
             {/* Filter Pills */}
-            <div className="pills-row">
+            <div className="filter-pills-row">
               <button 
                 type="button" 
-                className={`pill ${filterType === "all" ? "active" : ""}`}
+                className={`filter-pill ${filterType === "all" ? "active" : ""}`}
                 onClick={() => setFilterType("all")}
               >
                 ทั้งหมด ({videos.length})
               </button>
               <button 
                 type="button" 
-                className={`pill ${filterType === "transcribed" ? "active" : ""}`}
+                className={`filter-pill ${filterType === "transcribed" ? "active" : ""}`}
                 onClick={() => setFilterType("transcribed")}
               >
                 ✓ มีสคริปต์แล้ว ({stats?.transcribed_count || 0})
               </button>
               <button 
                 type="button" 
-                className={`pill ${filterType === "pending" ? "active" : ""}`}
+                className={`filter-pill ${filterType === "pending" ? "active" : ""}`}
                 onClick={() => setFilterType("pending")}
               >
                 ⏳ รอคิวแกะเสียง ({stats?.no_subtitle_count || 0})
@@ -916,7 +926,7 @@ export function App() {
                         {isTranscribed ? (
                           <button
                             type="button"
-                            className="card card result-card-btn"
+                            className="result-card-btn"
                             onClick={() => fetchFullTranscript(video.id)}
                           >
                             📖 ดูสคริปต์
@@ -928,7 +938,7 @@ export function App() {
                         ) : (
                           <button
                             type="button"
-                            className="card card result-card-btn"
+                            className="result-card-btn"
                             disabled
                             style={{ cursor: "not-allowed", opacity: 0.5 }}
                           >
@@ -951,7 +961,7 @@ export function App() {
             <div className="modal-header">
               <h3 style={{ fontSize: "1.1rem", fontWeight: "600" }}>สคริปต์วิดีโอฉบับเต็ม</h3>
               <button
-                className="btn btn-outline"
+                className="btn btn-secondary"
                 style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}
                 onClick={() => setActiveTranscriptVideoId(null)}
               >
@@ -983,7 +993,6 @@ export function App() {
           </div>
         </div>
       )}
-      </main>
     </div>
   );
 }

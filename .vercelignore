@@ -13,7 +13,8 @@ venv/
 .coverage
 
 # Backend runtime cache & logs (generated at runtime, not needed in bundle)
-backend/cache/
+backend/cache/*
+!backend/cache/channel_videos/
 backend/logs/
 
 # Frontend build artifacts (served separately, not part of Python Lambda)
