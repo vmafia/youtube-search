@@ -57,8 +57,10 @@ def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
         'extract_audio': True,
         'audio_format': 'm4a',
         'outtmpl': output_path,
-        'quiet': True,
         'no_warnings': True,
+        # 🚀 Speed Hack: Bypass YouTube Throttling
+        'concurrent_fragment_downloads': 10,
+        'http_chunk_size': 10485760,
     }
     
     if progress_cb:
@@ -326,9 +328,10 @@ def main():
             
         update_status(status)
         
-        # Rate limit protection: Sleep for 30 seconds to prevent hitting the 250k Tokens/Min limit
-        log("Sleeping 30 seconds to avoid hitting API rate limits...", "INFO")
-        time.sleep(30)
+        # Rate limit protection: Sleep for a short time. 
+        # If we hit the 1M Tokens/Min limit, the retry logic will handle the 429 error and pause automatically.
+        log("Sleeping 2 seconds before next video...", "INFO")
+        time.sleep(2)
         
         # Calculate ETA
         elapsed = time.time() - video_start_time
