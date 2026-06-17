@@ -339,7 +339,7 @@ export function App() {
         } else {
           failedCount += batchIds.length;
           if (response.status === 401) {
-            addToast("รหัส Admin ไม่ถูกต้อง หรือไม่ได้ตั้งค่า VITE_ADMIN_SECRET", "error");
+            addToast("รหัสผ่าน Admin ไม่ถูกต้อง กรุณาโหลดหน้าเว็บใหม่แล้วลองอีกครั้ง", "error");
             break;
           }
         }
