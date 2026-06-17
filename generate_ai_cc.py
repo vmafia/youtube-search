@@ -54,8 +54,6 @@ def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
     
     ydl_opts = {
         'format': 'm4a/bestaudio/best',
-        'extract_audio': True,
-        'audio_format': 'm4a',
         'outtmpl': output_path,
         'no_warnings': True,
         # 🚀 Speed Hack: Bypass YouTube Throttling
