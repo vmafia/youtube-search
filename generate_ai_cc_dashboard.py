@@ -180,41 +180,54 @@ def main():
             IMPORTANT: Output ONLY the raw JSON array. Do not use markdown code blocks like ```json.
             """
             
-            try:
-                response_stream = client.models.generate_content_stream(
-                    model='gemini-2.5-flash',
-                    contents=[myfile, prompt],
-                    config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0)
-                )
-                
-                full_text = ""
-                chunks = 0
-                for chunk in response_stream:
-                    if chunk.text:
-                        full_text += chunk.text
-                        chunks += 1
-                        progress.update(ai_task, description=f"[bold magenta]🤖 AI is Transcribing... (Received {chunks} chunks)[/bold magenta]")
-                
-                progress.update(ai_task, completed=100, description="[green]✅ AI Transcription Complete[/green]")
-                
-                # Parse JSON
-                text = full_text.strip()
-                if text.startswith("```json"): text = text[7:]
-                if text.endswith("```"): text = text[:-3]
-                transcript = json.loads(text.strip())
-                
-                # Save
-                save_task = progress.add_task("[blue]💾 Saving to Database...[/blue]", total=None)
-                db_manager.set_document("transcripts", vid, transcript)
-                from backend.utils.youtube import save_transcript_to_sqlite
-                save_transcript_to_sqlite(vid, transcript)
-                progress.update(save_task, completed=100, description="[green]✅ Saved to Database[/green]")
-                
-                success += 1
-                console.print(f"[success]🎉 Video {vid} completed successfully![/success]\n")
-                
-            except Exception as e:
-                console.print(f"[error]❌ AI Transcription Failed: {e}[/error]\n")
+            max_retries = 50
+            for attempt in range(max_retries):
+                try:
+                    response_stream = client.models.generate_content_stream(
+                        model='gemini-2.5-flash',
+                        contents=[myfile, prompt],
+                        config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0)
+                    )
+                    
+                    full_text = ""
+                    chunks = 0
+                    for chunk in response_stream:
+                        if chunk.text:
+                            full_text += chunk.text
+                            chunks += 1
+                            progress.update(ai_task, description=f"[bold magenta]🤖 AI is Transcribing... (Received {chunks} chunks)[/bold magenta]")
+                    
+                    progress.update(ai_task, completed=100, description="[green]✅ AI Transcription Complete[/green]")
+                    
+                    # Parse JSON
+                    text = full_text.strip()
+                    if text.startswith("```json"): text = text[7:]
+                    if text.endswith("```"): text = text[:-3]
+                    transcript = json.loads(text.strip())
+                    
+                    # Save
+                    save_task = progress.add_task("[blue]💾 Saving to Database...[/blue]", total=None)
+                    db_manager.set_document("transcripts", vid, transcript)
+                    from backend.utils.youtube import save_transcript_to_sqlite
+                    save_transcript_to_sqlite(vid, transcript)
+                    progress.update(save_task, completed=100, description="[green]✅ Saved to Database[/green]")
+                    
+                    success += 1
+                    console.print(f"[success]🎉 Video {vid} completed successfully![/success]\n")
+                    break # Success, exit retry loop
+                    
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "429" in error_str or "quota" in error_str or "rate limit" in error_str or "exhausted" in error_str:
+                        wait_time = 60 if attempt < 5 else 3600
+                        console.print(f"[warning]⏳ AI needs a break (Rate Limit). Waiting {wait_time}s before retry {attempt+1}/{max_retries}...[/warning]")
+                        time.sleep(wait_time)
+                    else:
+                        console.print(f"[error]❌ AI Transcription Failed: {e}[/error]\n")
+                        failed += 1
+                        break
+            else:
+                console.print("[error]❌ Max retries reached for Gemini API.[/error]")
                 failed += 1
                 
             # Cleanup
