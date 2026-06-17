@@ -302,6 +302,19 @@ export function App() {
     let skippedCount = 0;
     const batchSize = 8;
     
+    // Prompt for admin secret if it wasn't baked into the frontend build
+    let tokenToUse = ADMIN_SECRET;
+    if (!tokenToUse) {
+      const userInput = prompt("⚠️ ฟีเจอร์นี้สงวนไว้สำหรับ Admin เท่านั้น\nกรุณาใส่รหัสผ่าน (Admin Secret) เพื่อดำเนินการต่อ:");
+      if (!userInput) {
+        setLoading(false);
+        setSyncProgress(null);
+        addToast("ยกเลิกการทำงานเนื่องจากไม่ได้ใส่รหัสผ่าน", "error");
+        return;
+      }
+      tokenToUse = userInput;
+    }
+    
     try {
       for (let i = 0; i < pendingVideos.length; i += batchSize) {
         const batch = pendingVideos.slice(i, i + batchSize);
@@ -313,7 +326,7 @@ export function App() {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${ADMIN_SECRET}`
+            "Authorization": `Bearer ${tokenToUse}`
           },
           body: JSON.stringify({ video_ids: batchIds }),
         });
