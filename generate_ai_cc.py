@@ -181,18 +181,17 @@ def get_missing_videos(channel_name: str) -> list:
     # 1. Get total channel videos
     log(f"Fetching channel videos for {channel_name}...", "INFO")
     try:
-        r = requests.post(f"{API_URL}/api/channel-videos", json={"channel_name": channel_name})
-        r.raise_for_status()
-        videos = r.json().get("videos", [])
+        from backend.utils.youtube import youtube_client
+        videos = youtube_client.fetch_channel_videos(channel_name, limit=5000)
     except Exception as e:
         log(f"Failed to fetch channel videos from backend: {e}", "ERR")
         sys.exit(1)
 
     # 2. Get transcribed videos
     try:
-        r = requests.get(f"{API_URL}/api/transcription-stats")
-        r.raise_for_status()
-        transcribed_ids = set(r.json().get("transcribed_ids", []))
+        from backend.utils.search_db import get_db_stats
+        stats = get_db_stats()
+        transcribed_ids = set(stats.get("transcribed_ids", []))
     except Exception as e:
         log(f"Failed to fetch stats from backend: {e}", "ERR")
         sys.exit(1)
