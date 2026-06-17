@@ -37,6 +37,7 @@ def log(msg: str, level: str = "INFO"):
     icons = {"INFO": "[i]", "OK": "[OK]", "WARN": "[!]", "ERR": "[X]"}
     icon = icons.get(level, "   ")
     print(f"[{ts}] {icon} {msg}")
+    sys.stdout.flush()
 
 def update_status(status_data):
     """Update status file for the dashboard to read."""
@@ -56,9 +57,6 @@ def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
         'format': 'm4a/bestaudio/best',
         'outtmpl': output_path,
         'no_warnings': True,
-        # 🚀 Speed Hack: Bypass YouTube Throttling
-        'concurrent_fragment_downloads': 10,
-        'http_chunk_size': 10485760,
     }
     
     if progress_cb:
