@@ -34,9 +34,31 @@ STATUS_FILE = os.path.join(CACHE_DIR, "transcription_status.json")
 
 def log(msg: str, level: str = "INFO"):
     ts = datetime.now().strftime("%H:%M:%S")
-    icons = {"INFO": "[i]", "OK": "[OK]", "WARN": "[!]", "ERR": "[X]"}
-    icon = icons.get(level, "   ")
-    print(f"[{ts}] {icon} {msg}")
+    
+    # ANSI Colors
+    RESET = "\033[0m"
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+
+    color = RESET
+    if level == "INFO":
+        color = CYAN
+        icon = "[i]"
+    elif level == "OK":
+        color = GREEN
+        icon = "[OK]"
+    elif level == "WARN":
+        color = YELLOW
+        icon = "[!]"
+    elif level == "ERR":
+        color = RED
+        icon = "[X]"
+    else:
+        icon = "   "
+
+    print(f"{color}[{ts}] {icon} {msg}{RESET}")
     sys.stdout.flush()
 
 def update_status(status_data):
@@ -118,7 +140,7 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client, status_c
     max_retries = 50 # Increase retries to handle long daily quota pauses
     for attempt in range(max_retries):
         try:
-            response = client.models.generate_content(
+            response_stream = client.models.generate_content_stream(
                 model='gemini-2.5-flash',
                 contents=[myfile, prompt],
                 config=types.GenerateContentConfig(
@@ -126,6 +148,15 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client, status_c
                     temperature=0.0
                 )
             )
+            
+            full_text = ""
+            for chunk in response_stream:
+                if chunk.text:
+                    full_text += chunk.text
+                    print("\033[95m.\033[0m", end="")
+                    sys.stdout.flush()
+            print() # newline
+            
             break # Success, break out of retry loop
         except Exception as e:
             error_str = str(e).lower()
@@ -162,7 +193,7 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client, status_c
         
     # Parse JSON
     try:
-        text = response.text.strip()
+        text = full_text.strip()
         if text.startswith("```json"):
             text = text[7:]
         if text.endswith("```"):
@@ -171,7 +202,7 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client, status_c
         transcript = json.loads(text.strip())
         return transcript
     except Exception as e:
-        log(f"Failed to parse Gemini output: {e}\nRaw output: {response.text[:200]}...", "ERR")
+        log(f"Failed to parse Gemini output: {e}\nRaw output: {full_text[:200]}...", "ERR")
         return []
 
 def get_missing_videos(channel_name: str) -> list:
