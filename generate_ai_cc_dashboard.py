@@ -105,14 +105,8 @@ def compress_for_groq(audio_path, temp_dir):
 #  🚀 Groq Whisper (Primary Engine)
 # ══════════════════════════════════════════════════════════════
 
-def transcribe_with_groq(audio_path, groq_api_key, temp_dir, progress=None, task_id=None):
-    """Primary: Transcribe using Groq Whisper large-v3-turbo (fast & free)."""
-    # Compress if file > 24MB
-    send_path = compress_for_groq(audio_path, temp_dir)
-
-    if progress and task_id:
-        progress.update(task_id, description="[groq]🚀 Groq Whisper: Sending to AI...[/groq]")
-
+def transcribe_with_groq_direct(send_path, groq_api_key, progress=None, task_id=None):
+    """Core function to send a single audio file to Groq Whisper."""
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
     headers = {"Authorization": f"Bearer {groq_api_key}"}
 
@@ -126,7 +120,7 @@ def transcribe_with_groq(audio_path, groq_api_key, temp_dir, progress=None, task
                     "response_format": "verbose_json",
                     "language": "th",
                 }
-                response = requests.post(url, headers=headers, files=files, data=data, timeout=600)
+                response = requests.post(url, headers=headers, files=files, data=data, timeout=300)
 
             if response.status_code == 200:
                 break
@@ -140,15 +134,12 @@ def transcribe_with_groq(audio_path, groq_api_key, temp_dir, progress=None, task
         except requests.exceptions.Timeout:
             console.print(f"[warning]⏳ Groq timeout. Retrying {attempt+1}/{max_retries}...[/warning]")
             time.sleep(10)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e
+            time.sleep(5)
     else:
         raise Exception("Groq max retries reached")
-
-    # Cleanup compressed file
-    if send_path != audio_path and os.path.exists(send_path):
-        try:
-            os.remove(send_path)
-        except:
-            pass
 
     result = response.json()
     segments = result.get("segments", [])
@@ -163,12 +154,110 @@ def transcribe_with_groq(audio_path, groq_api_key, temp_dir, progress=None, task
                 "duration": round(seg["end"] - seg["start"], 2),
                 "speaker": None
             })
+    return transcript
+
+def transcribe_with_groq(audio_path, groq_api_key, temp_dir, progress=None, task_id=None):
+    """Primary: Transcribe using Groq Whisper, auto-chunking large files to bypass timeouts & limits."""
+    import re
+    import glob
+
+    # First, compress the audio to a standard low bitrate so it is easy to handle
+    send_path = compress_for_groq(audio_path, temp_dir)
+
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    dur_proc = subprocess.run([ffmpeg_exe, "-i", send_path], capture_output=True, text=True)
+    dur_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", dur_proc.stderr)
+
+    total_seconds = 0
+    if dur_match:
+        hrs, mins, secs = float(dur_match.group(1)), float(dur_match.group(2)), float(dur_match.group(3))
+        total_seconds = hrs * 3600 + mins * 60 + secs
+
+    # If the audio is short (e.g. less than 30 minutes), transcribe directly
+    if total_seconds < 1800:
+        if progress and task_id:
+            progress.update(task_id, description="[groq]🚀 Groq Whisper: Transcribing...[/groq]")
+        try:
+            transcript = transcribe_with_groq_direct(send_path, groq_api_key, progress, task_id)
+            if progress and task_id:
+                progress.update(task_id, completed=100,
+                                 description=f"[success]✅ Groq Whisper Done ({len(transcript)} segments)[/success]")
+            # Cleanup
+            if send_path != audio_path and os.path.exists(send_path):
+                try: os.remove(send_path)
+                except: pass
+            return transcript
+        except Exception as e:
+            if send_path != audio_path and os.path.exists(send_path):
+                try: os.remove(send_path)
+                except: pass
+            raise e
+
+    # Otherwise, split into 20-minute (1200 seconds) chunks
+    chunk_time = 1200
+    vid_name = os.path.splitext(os.path.basename(audio_path))[0]
+    chunk_pattern = os.path.join(temp_dir, f"chunk_{vid_name}_%03d.m4a")
+
+    # Clean up old chunks
+    for old_chunk in glob.glob(os.path.join(temp_dir, f"chunk_{vid_name}_*.m4a")):
+        try: os.remove(old_chunk)
+        except: pass
+
+    if progress and task_id:
+        progress.update(task_id, description="[groq]✂️ Groq Whisper: Splitting into chunks...[/groq]")
+
+    # Split using ffmpeg segment muxer
+    split_proc = subprocess.run([
+        ffmpeg_exe, "-y", "-i", send_path,
+        "-f", "segment", "-segment_time", str(chunk_time),
+        "-c", "copy", chunk_pattern
+    ], capture_output=True, text=True)
+
+    if split_proc.returncode != 0:
+        if send_path != audio_path and os.path.exists(send_path):
+            try: os.remove(send_path)
+            except: pass
+        raise Exception(f"Failed to split audio: {split_proc.stderr[:200]}")
+
+    chunks = sorted(glob.glob(os.path.join(temp_dir, f"chunk_{vid_name}_*.m4a")))
+    if not chunks:
+        if send_path != audio_path and os.path.exists(send_path):
+            try: os.remove(send_path)
+            except: pass
+        raise Exception("No audio chunks generated")
+
+    merged_transcript = []
+    try:
+        for idx, chunk_path in enumerate(chunks):
+            if progress and task_id:
+                progress.update(task_id, description=f"[groq]🚀 Groq: Chunk {idx+1}/{len(chunks)}...[/groq]")
+            
+            chunk_transcript = transcribe_with_groq_direct(chunk_path, groq_api_key, progress, task_id)
+            
+            # Shift timestamps of segments in this chunk
+            offset = idx * chunk_time
+            for seg in chunk_transcript:
+                seg["start"] = round(seg["start"] + offset, 2)
+                merged_transcript.append(seg)
+                
+            # Clean up chunk file
+            try: os.remove(chunk_path)
+            except: pass
+    finally:
+        # Final cleanup of remaining chunk files in case of errors
+        for chunk_path in chunks:
+            if os.path.exists(chunk_path):
+                try: os.remove(chunk_path)
+                except: pass
+        if send_path != audio_path and os.path.exists(send_path):
+            try: os.remove(send_path)
+            except: pass
 
     if progress and task_id:
         progress.update(task_id, completed=100,
-                        description=f"[success]✅ Groq Whisper Done ({len(transcript)} segments)[/success]")
+                         description=f"[success]✅ Groq Whisper Done ({len(merged_transcript)} segments via {len(chunks)} chunks)[/success]")
 
-    return transcript
+    return merged_transcript
 
 # ══════════════════════════════════════════════════════════════
 #  🤖 Gemini 2.0 Flash (Fallback Engine)
@@ -372,26 +461,68 @@ def main():
                     except:
                         pass
 
+            # Search for available cookies file
+            cookies_file = None
+            for name in ['cookies_new.txt', 'cookies.txt', 'youtube_cookies.txt']:
+                path_cwd = os.path.join(os.getcwd(), name)
+                path_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+                if os.path.exists(path_cwd):
+                    cookies_file = path_cwd
+                    break
+                elif os.path.exists(path_script):
+                    cookies_file = path_script
+                    break
+
+            # Choose best audio format (webm typically works even when m4a gets 403)
             ydl_opts = {
-                'format': 'm4a/bestaudio/best',
-                'outtmpl': audio_path,
+                'format': 'bestaudio',
+                'outtmpl': audio_path.replace('.m4a', '.%(ext)s'),
                 'quiet': True,
                 'no_warnings': True,
-                'cookiesfrombrowser': ('chrome',),  # Bypass bot protection
                 'progress_hooks': [hook],
             }
+            if cookies_file:
+                ydl_opts['cookiefile'] = cookies_file
+
+            # Check for existing audio file in different formats
+            actual_audio_path = None
+            for ext in ['.m4a', '.webm', '.ogg', '.mp3']:
+                test_path = os.path.join(temp_audio_dir, f"{vid}{ext}")
+                if os.path.exists(test_path) and os.path.getsize(test_path) > 100 * 1024:
+                    actual_audio_path = test_path
+                    break
 
             dl_ok = False
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([f"https://www.youtube.com/watch?v={vid}"])
-                progress.update(dl_task, completed=100, description="[green]✅ Audio Downloaded[/green]")
-                file_mb = os.path.getsize(audio_path) / (1024 * 1024)
-                console.print(f"  [dim]📁 File size: {file_mb:.1f} MB[/dim]")
+            if actual_audio_path:
+                file_mb = os.path.getsize(actual_audio_path) / (1024 * 1024)
+                progress.update(dl_task, completed=100, description="[green]✅ Audio Cached[/green]")
+                console.print(f"  [dim]📁 Cached file: {file_mb:.1f} MB ({os.path.basename(actual_audio_path)})[/dim]")
                 dl_ok = True
-            except Exception as e:
-                console.print(f"[error]❌ Download failed: {e}[/error]")
-                progress.update(dl_task, description="[red]❌ Download Failed[/red]")
+                audio_path = actual_audio_path
+            else:
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([f"https://www.youtube.com/watch?v={vid}"])
+                    
+                    # Find which file format was actually downloaded
+                    for ext in ['.m4a', '.webm', '.ogg', '.mp3']:
+                        test_path = os.path.join(temp_audio_dir, f"{vid}{ext}")
+                        if os.path.exists(test_path):
+                            actual_audio_path = test_path
+                            break
+                    
+                    if actual_audio_path:
+                        progress.update(dl_task, completed=100, description="[green]✅ Audio Downloaded[/green]")
+                        file_mb = os.path.getsize(actual_audio_path) / (1024 * 1024)
+                        console.print(f"  [dim]📁 File size: {file_mb:.1f} MB ({os.path.basename(actual_audio_path)})[/dim]")
+                        dl_ok = True
+                        audio_path = actual_audio_path
+                    else:
+                        raise FileNotFoundError("Could not locate downloaded audio file with expected extension.")
+                except Exception as e:
+                    console.print(f"[error]❌ Download failed: {e}[/error]")
+                    progress.update(dl_task, description="[red]❌ Download Failed[/red]")
+
 
             if not dl_ok:
                 failed_count += 1

@@ -75,11 +75,26 @@ def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
     log(f"Downloading audio for {video_id}...", "INFO")
     url = f"https://www.youtube.com/watch?v={video_id}"
     
+    # Search for available cookies file
+    cookies_file = None
+    for name in ['cookies_new.txt', 'cookies.txt', 'youtube_cookies.txt']:
+        path_cwd = os.path.join(os.getcwd(), name)
+        path_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+        if os.path.exists(path_cwd):
+            cookies_file = path_cwd
+            break
+        elif os.path.exists(path_script):
+            cookies_file = path_script
+            break
+
     ydl_opts = {
         'format': 'm4a/bestaudio/best',
         'outtmpl': output_path,
         'no_warnings': True,
     }
+    if cookies_file:
+        ydl_opts['cookiefile'] = cookies_file
+    
     
     if progress_cb:
         last_update = [0]

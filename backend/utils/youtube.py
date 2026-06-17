@@ -129,7 +129,7 @@ def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0):
 from backend.utils.db import DatabaseManager
 
 def generate_embeddings_gemini(texts: List[str], api_key: str) -> List[List[float]]:
-    """Generates embeddings for a batch of texts using Gemini API."""
+    """Generates embeddings for a batch of texts using Gemini API with automatic retry on 429."""
     if not api_key or not texts:
         return []
         
@@ -145,16 +145,24 @@ def generate_embeddings_gemini(texts: List[str], api_key: str) -> List[List[floa
             }
         })
         
-    try:
-        r = requests.post(url, headers=headers, json={"requests": requests_data}, timeout=10)
-        if r.status_code == 200:
-            res_data = r.json()
-            return [emb["values"] for emb in res_data.get("embeddings", [])]
-        else:
-            logger.warning(f"Gemini embedding batch failed with status code {r.status_code}: {r.text}")
-    except Exception as e:
-        logger.error(f"Error calling Gemini batch embeddings: {e}")
-        
+    max_retries = 10
+    for attempt in range(max_retries):
+        try:
+            r = requests.post(url, headers=headers, json={"requests": requests_data}, timeout=30)
+            if r.status_code == 200:
+                res_data = r.json()
+                return [emb["values"] for emb in res_data.get("embeddings", [])]
+            elif r.status_code == 429:
+                wait_time = (2 ** attempt) * 2 + 10  # Exponential backoff + buffer
+                logger.warning(f"Gemini embedding rate limit (429). Waiting {wait_time}s (retry {attempt+1}/{max_retries})...")
+                time.sleep(wait_time)
+            else:
+                logger.warning(f"Gemini embedding batch failed with status code {r.status_code}: {r.text}")
+                break
+        except Exception as e:
+            logger.error(f"Error calling Gemini batch embeddings (attempt {attempt+1}/{max_retries}): {e}")
+            time.sleep(5)
+            
     return []
 
 def save_transcript_to_sqlite(video_id: str, transcript: list):
