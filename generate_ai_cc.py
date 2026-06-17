@@ -152,7 +152,7 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client, status_c
     
     log("Waiting for Gemini to transcribe...", "INFO")
     
-    max_retries = 50 # Increase retries to handle long daily quota pauses
+    max_retries = 10
     for attempt in range(max_retries):
         try:
             response_stream = client.models.generate_content_stream(
@@ -176,13 +176,9 @@ def transcribe_audio_with_gemini(audio_path: str, client: genai.Client, status_c
         except Exception as e:
             error_str = str(e).lower()
             if "429" in error_str or "quota" in error_str or "rate limit" in error_str or "exhausted" in error_str:
-                # If we've retried many times, it might be a DAILY limit. Sleep for 1 hour.
-                if attempt >= 5:
-                    wait_time = 3600
-                    log(f"Likely hit DAILY quota! Sleeping for 1 hour before retry {attempt + 1}/{max_retries}...", "WARN")
-                else:
-                    wait_time = 60 * (attempt + 1)
-                    log(f"Rate limit hit! Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...", "WARN")
+                # Exponential backoff: 30s, 60s, 120s, 240s, capped at 5 min
+                wait_time = min(300, 30 * (2 ** attempt))
+                log(f"Rate limit hit! Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...", "WARN")
                 time.sleep(wait_time)
             else:
                 log(f"Failed to transcribe with Gemini: {e}", "ERR")
@@ -237,7 +233,12 @@ def get_missing_videos(channel_name: str) -> list:
     try:
         from backend.utils.search_db import get_db_stats
         stats = get_db_stats()
-        transcribed_ids = set(stats.get("transcribed_ids", []))
+        transcribed_ids_raw = stats.get("transcribed_ids")
+        # Safety: if DB returned None (error), abort to avoid re-processing everything
+        if transcribed_ids_raw is None:
+            log(f"Database error detected: {stats.get('error', 'unknown')}. Aborting to prevent duplicate processing.", "ERR")
+            sys.exit(1)
+        transcribed_ids = set(transcribed_ids_raw)
     except Exception as e:
         log(f"Failed to fetch stats from backend: {e}", "ERR")
         sys.exit(1)

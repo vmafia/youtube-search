@@ -327,10 +327,13 @@ def get_db_stats() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"Error getting Turso DB stats: {e}")
+        # Return None to signal DB error - callers must handle this
+        # to avoid re-processing all videos when DB is unreachable
         return {
-            "total_videos": 0,
-            "transcribed_count": 0,
-            "transcribed_ids": []
+            "total_videos": -1,
+            "transcribed_count": -1,
+            "transcribed_ids": None,
+            "error": str(e)
         }
 
 def fetch_batch_surrounding_context(items: List[Dict[str, Any]], window_seconds: int = 120) -> Dict[tuple, str]:

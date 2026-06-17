@@ -79,7 +79,7 @@ def compress_for_groq(audio_path, temp_dir):
         if total_seconds > 0:
             # Target 23MB = 23 * 1024 * 1024 * 8 bits
             bps = int((23 * 1024 * 1024 * 8) / total_seconds)
-            bps = max(6000, min(32000, bps))  # cap at 32k, floor at 6k
+            bps = max(16000, min(64000, bps))  # cap at 64k, floor at 16k for acceptable quality
             target_bitrate = f"{bps // 1000}k"
 
     vid_name = os.path.splitext(os.path.basename(audio_path))[0]
@@ -360,7 +360,12 @@ def get_missing_videos(channel_name: str) -> list:
 
     from backend.utils.search_db import get_db_stats
     stats = get_db_stats()
-    transcribed_ids = set(stats.get("transcribed_ids", []))
+    transcribed_ids_raw = stats.get("transcribed_ids")
+    # Safety: if DB returned None (error), abort to prevent re-processing everything
+    if transcribed_ids_raw is None:
+        console.print(f"[error]❌ Database error: {stats.get('error', 'unknown')}. Aborting to prevent duplicate processing.[/error]")
+        sys.exit(1)
+    transcribed_ids = set(transcribed_ids_raw)
 
     return [v for v in videos if v["id"] not in transcribed_ids]
 
@@ -486,7 +491,7 @@ def main():
 
             # Check for existing audio file in different formats
             actual_audio_path = None
-            for ext in ['.m4a', '.webm', '.ogg', '.mp3']:
+            for ext in ['.m4a', '.webm', '.ogg', '.opus', '.mp3']:
                 test_path = os.path.join(temp_audio_dir, f"{vid}{ext}")
                 if os.path.exists(test_path) and os.path.getsize(test_path) > 100 * 1024:
                     actual_audio_path = test_path
@@ -505,7 +510,7 @@ def main():
                         ydl.download([f"https://www.youtube.com/watch?v={vid}"])
                     
                     # Find which file format was actually downloaded
-                    for ext in ['.m4a', '.webm', '.ogg', '.mp3']:
+                    for ext in ['.m4a', '.webm', '.ogg', '.opus', '.mp3']:
                         test_path = os.path.join(temp_audio_dir, f"{vid}{ext}")
                         if os.path.exists(test_path):
                             actual_audio_path = test_path

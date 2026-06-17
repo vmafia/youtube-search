@@ -1,16 +1,17 @@
 import os
 from dotenv import load_dotenv
+import secrets
 
 load_dotenv()
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "prod-secret-key-12345")
+    SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
     DEBUG = os.environ.get("FLASK_ENV") == "development"
     
     # YouTube API
     YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-    ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "admin1234")
+    ADMIN_SECRET = os.environ.get("ADMIN_SECRET") or secrets.token_hex(16)
     
     # Cache and limits
     IS_VERCEL = os.environ.get("VERCEL") == "1"

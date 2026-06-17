@@ -312,7 +312,7 @@ def bulk_index():
     เพื่อให้การค้นหาในอนาคตครอบคลุมทุกคลิปและเร็วขึ้น
     """
     auth_header = request.headers.get("Authorization")
-    if not auth_header or (auth_header != f"Bearer {Config.ADMIN_SECRET}" and auth_header != "Bearer admin1234"):
+    if not auth_header or auth_header != f"Bearer {Config.ADMIN_SECRET}":
         return jsonify({"error": "Unauthorized. Invalid Admin Token."}), 401
 
     if Config.IS_VERCEL:
@@ -382,7 +382,7 @@ def bulk_sync_cc():
     Uses youtube-transcript-api and bulk Turso inserts.
     """
     auth_header = request.headers.get("Authorization")
-    if not auth_header or (auth_header != f"Bearer {Config.ADMIN_SECRET}" and auth_header != "Bearer admin1234"):
+    if not auth_header or auth_header != f"Bearer {Config.ADMIN_SECRET}":
         return jsonify({"error": "Unauthorized. Invalid Admin Token."}), 401
 
     data = request.get_json() or {}

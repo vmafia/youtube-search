@@ -11,3 +11,5 @@ yt-dlp
 libsql-client
 google-genai
 openai
+imageio-ffmpeg
+rich
