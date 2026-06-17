@@ -61,30 +61,43 @@ import imageio_ffmpeg
 
 def compress_for_groq(audio_path, temp_dir):
     """Compress audio to fit under Groq's 25MB limit using embedded ffmpeg."""
+    import re
     file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
     if file_size_mb <= 24:
         return audio_path  # Already small enough
 
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     
+    # Dynamically calculate bitrate based on exact duration to target < 24MB
+    dur_proc = subprocess.run([ffmpeg_exe, "-i", audio_path], capture_output=True, text=True)
+    dur_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", dur_proc.stderr)
+    
+    target_bitrate = "16k"
+    if dur_match:
+        hrs, mins, secs = float(dur_match.group(1)), float(dur_match.group(2)), float(dur_match.group(3))
+        total_seconds = hrs * 3600 + mins * 60 + secs
+        if total_seconds > 0:
+            # Target 23MB = 23 * 1024 * 1024 * 8 bits
+            bps = int((23 * 1024 * 1024 * 8) / total_seconds)
+            bps = max(6000, min(32000, bps))  # cap at 32k, floor at 6k
+            target_bitrate = f"{bps // 1000}k"
+
     vid_name = os.path.splitext(os.path.basename(audio_path))[0]
     compressed_path = os.path.join(temp_dir, f"{vid_name}_compressed.m4a")
 
-    # Use a fixed 16k bitrate which is enough for 16kHz mono speech
-    # This guarantees files up to ~3.4 hours will fit under 25MB
     result = subprocess.run(
         [ffmpeg_exe, "-y", "-i", audio_path,
          "-ac", "1", "-ar", "16000",
-         "-b:a", "16k",
+         "-b:a", target_bitrate,
          "-vn", compressed_path],
-        capture_output=True, text=True, timeout=300
+        capture_output=True, text=True, timeout=900
     )
 
     if result.returncode != 0:
         raise Exception(f"ffmpeg compression failed: {result.stderr[:200]}")
 
     new_size = os.path.getsize(compressed_path) / (1024 * 1024)
-    console.print(f"  [dim]📦 Compressed {file_size_mb:.1f}MB → {new_size:.1f}MB (16kbps mono 16kHz)[/dim]")
+    console.print(f"  [dim]📦 Compressed {file_size_mb:.1f}MB → {new_size:.1f}MB ({target_bitrate}bps mono 16kHz)[/dim]")
 
     return compressed_path
 
