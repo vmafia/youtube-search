@@ -377,6 +377,7 @@ def main():
                 'outtmpl': audio_path,
                 'quiet': True,
                 'no_warnings': True,
+                'cookiesfrombrowser': ('chrome',),  # Bypass bot protection
                 'progress_hooks': [hook],
             }
 
