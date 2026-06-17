@@ -181,7 +181,9 @@ def get_missing_videos(channel_name: str) -> list:
     # 1. Get total channel videos
     log(f"Fetching channel videos for {channel_name}...", "INFO")
     try:
-        from backend.utils.youtube import youtube_client
+        from backend.utils.youtube import YouTubeClient
+        from backend.config import Config
+        youtube_client = YouTubeClient(api_key=Config.YOUTUBE_API_KEY)
         videos = youtube_client.fetch_channel_videos(channel_name, limit=5000)
     except Exception as e:
         log(f"Failed to fetch channel videos from backend: {e}", "ERR")
