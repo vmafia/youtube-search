@@ -10,7 +10,7 @@ class Config:
     # YouTube API
     YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-    ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "change-this-secret-in-prod")
+    ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "admin1234")
     
     # Cache and limits
     IS_VERCEL = os.environ.get("VERCEL") == "1"
