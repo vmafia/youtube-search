@@ -289,13 +289,16 @@ def main():
     db_manager = DatabaseManager(Config.CACHE_DIR)
 
     # ── Header ──
-    header = Table(show_header=False, show_edge=False, padding=(0, 1))
-    header.add_column(justify="center")
-    header.add_row("[bold cyan]🚀 Assabiqoon AI Transcription Dashboard[/bold cyan]")
-    header.add_row("")
-    header.add_row(f"[bold magenta]🥇 Primary:[/bold magenta]  {'Groq Whisper large-v3-turbo 🟢' if groq_api_key else '❌ Not configured'}")
-    header.add_row(f"[bold blue]🥈 Fallback:[/bold blue] {'Gemini 2.0 Flash 🔵' if gemini_client else '❌ Not configured'}")
-    console.print(Panel(header, border_style="cyan", title="🤖 AI Engines", subtitle="Powered by Whisper + Gemini"))
+    console.print(Panel.fit(
+        "[bold cyan]🚀 Assabiqoon AI Transcription (Terminal)[/bold cyan]\n"
+        "[dim]────────────────────────────────────────────────[/dim]\n"
+        f" 🥇 [bold green]Primary:[/bold green]  {'Groq Whisper large-v3-turbo 🟢' if groq_api_key else '❌ Not configured'}\n"
+        f"      🥈 [bold blue]Fallback:[/bold blue] {'Gemini 2.0 Flash 🔵' if gemini_client else '❌ Not configured'}\n"
+        "[dim]────────────────────────────────────────────────[/dim]\n"
+        "🎨 [bold yellow]ดูความคืบหน้าแบบการ์ตูนสดใสได้ที่:[/bold yellow] [bold underline white]http://localhost:5173[/bold underline white] ✨",
+        title="🤖 AI Engines",
+        border_style="blue"
+    ))
 
     # ── Fetch videos ──
     with console.status("[cyan]📡 Fetching video list from YouTube...[/cyan]"):

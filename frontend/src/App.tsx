@@ -1046,8 +1046,11 @@ export function App() {
           )}
         </div>
       ) : (
-        /* New Dashboard Panel */
-        <div className="dashboard-container" style={{ animation: "slideIn 0.25s ease-out" }}>
+        /* Cartoon Dashboard Panel */
+        <div className="cartoon-dashboard" style={{ animation: "slideIn 0.25s ease-out" }}>
+          <div className="cartoon-mascot-container">
+            <img src="/assets/mascot_robot.png" alt="AI Mascot" className="cartoon-mascot" />
+          </div>
           {/* Sequential CC Sync Progress State */}
           {syncProgress && (
             <div className="live-status-card active" style={{ marginBottom: "1rem" }}>
@@ -1082,7 +1085,7 @@ export function App() {
 
           {/* Active Transcription Task Indicator */}
           {transcriptionStatus && !syncProgress && (
-            <div className={`live-status-card ${transcriptionStatus.status === "running" ? "active" : "idle"}`}>
+            <div className={`cartoon-status-card ${transcriptionStatus.status === "running" ? "running" : ""}`}>
               <div className="live-status-header">
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                   <span className={`live-pulse-dot ${transcriptionStatus.status === "running" ? "running" : "idle"}`}></span>
@@ -1122,9 +1125,9 @@ export function App() {
                         คลิปที่ {transcriptionStatus.current_index}/{transcriptionStatus.total_to_process} ({Math.round((transcriptionStatus.current_index / transcriptionStatus.total_to_process) * 100)}%)
                       </span>
                     </div>
-                    <div className="live-progress-bg">
+                    <div className="cartoon-progress-bar">
                       <div 
-                        className="live-progress-fill" 
+                        className="cartoon-progress-fill" 
                         style={{ width: `${(transcriptionStatus.current_index / transcriptionStatus.total_to_process) * 100}%` }}
                       ></div>
                     </div>
@@ -1192,62 +1195,46 @@ export function App() {
           )}
 
           {/* Dashboard Stats */}
-          <div style={{ marginBottom: "1.5rem" }}>
+          <div style={{ marginBottom: "2rem" }}>
             <button
               onClick={handleBulkSyncCC}
               disabled={loading || videos.length === 0}
-              style={{
-                width: "100%",
-                padding: "1rem",
-                background: "linear-gradient(135deg, var(--teal), #1d4ed8)",
-                color: "white",
-                border: "none",
-                borderRadius: "12px",
-                fontWeight: "600",
-                fontSize: "1rem",
-                cursor: loading ? "not-allowed" : "pointer",
-                boxShadow: "0 4px 15px rgba(20, 184, 166, 0.3)",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                gap: "10px",
-                transition: "all 0.2s ease"
-              }}
+              className="cartoon-btn"
             >
-              <span>⚡</span> ดึง CC ภาษาไทยจาก YouTube ทั้งช่องอัตโนมัติ (ความเร็วแสง)
+              <span>⚡</span> ดึง CC ภาษาไทยจาก YouTube ทั้งช่อง (โหมดจรวด!)
             </button>
           </div>
 
-          <div className="dashboard-grid">
-            <div className="stat-card">
-              <span className="stat-label">วิดีโอทั้งหมด</span>
-              <span className="stat-value">{videos.length} คลิป</span>
+          <div className="cartoon-stats-grid">
+            <div className="cartoon-stat-item yellow">
+              <span className="cartoon-stat-label">วิดีโอทั้งหมด</span>
+              <span className="cartoon-stat-value">{videos.length} คลิป</span>
             </div>
-            <div className="stat-card">
-              <span className="stat-label">มีสคริปต์พร้อมค้นหาแล้ว</span>
-              <span className="stat-value" style={{ color: "var(--success)" }}>
+            <div className="cartoon-stat-item green">
+              <span className="cartoon-stat-label">พร้อมค้นหาแล้ว ✨</span>
+              <span className="cartoon-stat-value">
                 {statsLoading ? "..." : `${stats?.transcribed_count || 0} คลิป`}
               </span>
             </div>
-            <div className="stat-card">
-              <span className="stat-label">รอคิวแกะเสียง</span>
-              <span className="stat-value" style={{ color: "#f59e0b" }}>
+            <div className="cartoon-stat-item pink">
+              <span className="cartoon-stat-label">รอคิวแกะเสียง ⏳</span>
+              <span className="cartoon-stat-value">
                 {statsLoading ? "..." : `${videos.length > 0 && stats ? Math.max(0, videos.length - stats.transcribed_count) : 0} คลิป`}
               </span>
             </div>
           </div>
 
           {/* Progress Bar */}
-          <div className="progress-container">
-            <div className="progress-header">
-              <span style={{ fontWeight: "500" }}>ความคืบหน้าการถอดความสคริปต์ของช่อง</span>
-              <span style={{ fontWeight: "600", color: "var(--teal)" }}>
+          <div className="cartoon-status-card" style={{ background: "#fff", borderColor: "#000" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "800", fontSize: "1.1rem" }}>
+              <span>ความคืบหน้าภาพรวม 🚀</span>
+              <span>
                 {stats && videos.length > 0 ? `${((stats.transcribed_count / videos.length) * 100).toFixed(1)}%` : "0%"}
               </span>
             </div>
-            <div className="progress-bg">
+            <div className="cartoon-progress-bar">
               <div
-                className="progress-bar-fill"
+                className="cartoon-progress-fill"
                 style={{
                   width: stats && videos.length > 0 ? `${(stats.transcribed_count / videos.length) * 100}%` : "0%"
                 }}
