@@ -153,7 +153,7 @@ def generate_embeddings_gemini(texts: List[str], api_key: str) -> List[List[floa
                 res_data = r.json()
                 return [emb["values"] for emb in res_data.get("embeddings", [])]
             elif r.status_code == 429:
-                wait_time = (2 ** attempt) * 2 + 10  # Exponential backoff + buffer
+                wait_time = min(15, (2 ** attempt) * 2 + 5)  # Cap wait time to 15s max
                 logger.warning(f"Gemini embedding rate limit (429). Waiting {wait_time}s (retry {attempt+1}/{max_retries})...")
                 time.sleep(wait_time)
             else:
