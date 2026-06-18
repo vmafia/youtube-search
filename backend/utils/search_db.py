@@ -1,10 +1,15 @@
 import os
+import time
+import json
 import logging
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+# Cache for get_db_stats() — avoids querying DB on every page load
+_stats_cache = {"data": None, "expires_at": 0}
 
 def get_db_client():
     import libsql_client
@@ -134,19 +139,18 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
         
     if video_ids:
         placeholders = ",".join("?" * len(video_ids))
-        video_filter = f" AND fts.video_id IN ({placeholders})"
+        video_filter = f" AND video_id IN ({placeholders})"
         params.extend(video_ids)
         
+    # Query FTS only (no JOIN) — much fewer rows read on Turso
     sql = f"""
         SELECT 
-            fts.video_id, 
-            fts.start_time, 
-            fts.timestamp, 
-            fts.text, 
-            bm25(transcripts_fts) as score,
-            t.speaker
-        FROM transcripts_fts fts
-        LEFT JOIN transcripts t ON fts.video_id = t.video_id AND fts.start_time = t.start_time
+            video_id, 
+            start_time, 
+            timestamp, 
+            text, 
+            bm25(transcripts_fts) as score
+        FROM transcripts_fts
         WHERE transcripts_fts MATCH ?
         {video_filter}
         ORDER BY score
@@ -158,9 +162,8 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
         rows = rs.rows
     except Exception as e:
         logger.error(f"Turso FTS5 error: {e}")
-        return []
-    finally:
         client.close()
+        return []
         
     # Group by video_id
     grouped_results = {}
@@ -170,7 +173,6 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
         timestamp = row[2]
         text = row[3]
         score = row[4]
-        speaker = row[5] if len(row) > 5 else None
         
         if vid not in grouped_results:
             grouped_results[vid] = {
@@ -193,17 +195,49 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
             "start": start_time,
             "text": text,
             "score": ui_score,
-            "speaker": speaker
+            "speaker": None  # will be filled in below
         })
         
         if ui_score > grouped_results[vid]["max_score"]:
             grouped_results[vid]["max_score"] = ui_score
             
-    # Sort by max_score and limit
+    # Sort by max_score and limit FIRST, then fetch speaker only for final results
     results = list(grouped_results.values())
     results.sort(key=lambda x: x["max_score"], reverse=True)
+    results = results[:limit]
     
-    return results[:limit]
+    # Batch-fetch speaker for only the final result matches (much fewer rows than JOIN)
+    final_keys = set()
+    for r in results:
+        for m in r["matches"]:
+            final_keys.add((r["video_id"], m["start"]))
+    
+    if final_keys:
+        try:
+            # Build a single query with UNION ALL for targeted index lookups
+            parts = []
+            sp_params = []
+            for vid, st in final_keys:
+                parts.append("SELECT video_id, start_time, speaker FROM transcripts WHERE video_id = ? AND start_time = ?")
+                sp_params.extend([vid, st])
+            
+            # Safeguard: if too many params, skip speaker enrichment
+            if len(sp_params) <= 1800:
+                sp_sql = " UNION ALL ".join(parts)
+                sp_rs = client.execute(sp_sql, sp_params)
+                speaker_map = {}
+                for sp_row in sp_rs.rows:
+                    speaker_map[(sp_row[0], sp_row[1])] = sp_row[2]
+                
+                # Fill in speaker data
+                for r in results:
+                    for m in r["matches"]:
+                        m["speaker"] = speaker_map.get((r["video_id"], m["start"]))
+        except Exception as e:
+            logger.warning(f"Speaker enrichment failed (non-critical): {e}")
+    
+    client.close()
+    return results
 
 def search_vector(query_embedding: List[float], limit: int = 50, video_ids: List[str] = None) -> List[Dict[str, Any]]:
     """
@@ -249,7 +283,6 @@ def search_vector(query_embedding: List[float], limit: int = 50, video_ids: List
         LIMIT {limit * 3}
     """
     # Duplicate query embedding for both vector_distance_cos and vector_top_k
-    import json
     params.insert(1, json.dumps(query_embedding))
     
     try:
@@ -336,7 +369,15 @@ def fetch_full_transcript(video_id: str) -> List[Dict[str, Any]]:
     finally:
         client.close()
 
-def get_db_stats() -> Dict[str, Any]:
+def get_db_stats(force_refresh: bool = False) -> Dict[str, Any]:
+    """Get DB stats with 5-minute cache to avoid hitting Turso on every page load."""
+    global _stats_cache
+    
+    # Return cached data if still valid
+    if not force_refresh and _stats_cache["data"] is not None and time.time() < _stats_cache["expires_at"]:
+        logger.debug("Returning cached DB stats")
+        return _stats_cache["data"]
+    
     try:
         client = get_db_client()
         
@@ -359,11 +400,17 @@ def get_db_stats() -> Dict[str, Any]:
         
         client.close()
         
-        return {
+        result = {
             "total_videos": transcribed_count,
             "transcribed_count": transcribed_count,
             "transcribed_ids": transcribed_ids
         }
+        
+        # Cache for 5 minutes
+        _stats_cache["data"] = result
+        _stats_cache["expires_at"] = time.time() + 300
+        
+        return result
     except Exception as e:
         logger.error(f"Error getting Turso DB stats: {e}")
         # Return None to signal DB error - callers must handle this
