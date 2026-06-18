@@ -143,14 +143,32 @@ def get_channel_videos():
 def get_video_transcript():
     data = request.get_json() or {}
     video_id = sanitize_input(data.get("video_id", ""))
+    allow_live_fetch = bool(data.get("allow_live_fetch", False))
     
     if not video_id:
         raise ValueError("video_id parameter is required")
         
     try:
+        cached_transcripts = load_all_transcripts()
+        cached_transcript = cached_transcripts.get(video_id)
+        if cached_transcript:
+            transcript = check_and_convert_milliseconds(cached_transcript)
+            return jsonify({"video_id": video_id, "transcript": transcript, "source": "cache"}), 200
+
+        cached_transcript = youtube_client.db_manager.get_document("transcripts", video_id)
+        if cached_transcript:
+            transcript = check_and_convert_milliseconds(cached_transcript)
+            return jsonify({"video_id": video_id, "transcript": transcript, "source": "document_cache"}), 200
+
+        if not allow_live_fetch:
+            return jsonify({
+                "error": "ยังไม่มีสคริปต์นี้ในแคช กรุณารันงานจัดทำดัชนีสคริปต์ก่อนเปิดฉบับเต็ม",
+                "status_code": 404
+            }), 404
+
         transcript = youtube_client.fetch_video_transcript(video_id)
         transcript = check_and_convert_milliseconds(transcript)
-        return jsonify({"video_id": video_id, "transcript": transcript}), 200
+        return jsonify({"video_id": video_id, "transcript": transcript, "source": "live"}), 200
     except Exception as e:
         logger.error(f"Error fetching transcript for video {video_id}: {str(e)}")
         raise e

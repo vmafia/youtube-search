@@ -14,6 +14,7 @@ cookies_new.txt
 **/*.pyo
 **/*.pyd
 .pytest_cache/
+.coverage
 venv/
 backend/logs/
 
@@ -89,3 +90,18 @@ backend/cache/*.db
 backend/cache/*.zip
 backend/cache/temp_audio/
 backend/cache/channel_videos/
+
+# Local experiments and generated browser profiles
+scratch/
+scratch_*.json
+results.txt
+context*.txt
+slv.txt
+query.txt
+old_*.css
+temp_*.css
+talib_theme.css
+
+# One-off local binaries and media
+deno.exe
+*.m4a

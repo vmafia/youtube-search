@@ -500,11 +500,15 @@ export function App() {
       setHighlightedStart(null);
     }
     
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 25000);
+
     try {
       const response = await fetch(`${API_BASE}/api/video-transcript`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ video_id: videoId }),
+        body: JSON.stringify({ video_id: videoId, allow_live_fetch: false }),
+        signal: controller.signal,
       });
       
       let data: any = {};
@@ -529,9 +533,13 @@ export function App() {
       });
       setFullTranscript(formatted);
     } catch (err: any) {
-      addToast(err.message || "การดึง Transcript ล้มเหลว", "error");
+      const message = err?.name === "AbortError"
+        ? "โหลดสคริปต์นานเกินไป กรุณาลองใหม่อีกครั้ง"
+        : (err.message || "การดึง Transcript ล้มเหลว");
+      addToast(message, "error");
       setActiveTranscriptVideoId(null);
     } finally {
+      window.clearTimeout(timeoutId);
       setTranscriptLoading(false);
     }
   };

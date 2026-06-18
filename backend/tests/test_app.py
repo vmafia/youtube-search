@@ -41,7 +41,7 @@ def test_video_transcript_success(mock_fetch_transcript, client):
     mock_transcript = [{"text": "Hello World", "start": 1.0, "duration": 2.0}]
     mock_fetch_transcript.return_value = mock_transcript
     
-    response = client.post("/api/video-transcript", json={"video_id": "vid1"})
+    response = client.post("/api/video-transcript", json={"video_id": "vid1", "allow_live_fetch": True})
     assert response.status_code == 200
     assert response.json["video_id"] == "vid1"
     assert response.json["transcript"] == mock_transcript
