@@ -107,3 +107,5 @@ deno.exe
 *.m4a
 
 backend/cache/embedding_backfill_checkpoint.json
+
+backend/cache/transcription_quality_report.json

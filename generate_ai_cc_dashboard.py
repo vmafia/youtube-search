@@ -34,6 +34,8 @@ from backend.config import Config
 
 CACHE_DIR = Config.CACHE_DIR
 STATUS_FILE = os.path.join(CACHE_DIR, "transcription_status.json")
+QUALITY_REPORT_FILE = os.path.join(CACHE_DIR, "transcription_quality_report.json")
+LAST_AUDIO_PROCESSING_INFO = {}
 
 custom_theme = Theme({
     "info": "cyan",
@@ -57,30 +59,115 @@ def update_status_file(status_data):
     except:
         pass
 
+
+def append_quality_report(entry):
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    report = {"summary": {}, "items": []}
+    if os.path.exists(QUALITY_REPORT_FILE):
+        try:
+            with open(QUALITY_REPORT_FILE, "r", encoding="utf-8") as f:
+                report = json.load(f)
+        except Exception:
+            report = {"summary": {}, "items": []}
+
+    items = [item for item in report.get("items", []) if item.get("video_id") != entry.get("video_id")]
+    items.append(entry)
+    summary = {
+        "total_checked": len(items),
+        "needs_review": sum(1 for item in items if item.get("needs_review")),
+        "failed": sum(1 for item in items if item.get("status") == "failed"),
+        "updated_at": time.time(),
+    }
+    report = {"summary": summary, "items": items[-5000:]}
+    with open(QUALITY_REPORT_FILE, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+
+
+def assess_transcript_quality(video, transcript, audio_info, used_engine, status="success", error=None):
+    flags = []
+    transcript = transcript or []
+    audio_info = audio_info or {}
+    segment_count = len(transcript)
+    text_lengths = [len((seg.get("text") or "").strip()) for seg in transcript]
+    total_chars = sum(text_lengths)
+    short_segments = sum(1 for n in text_lengths if n <= 3)
+    short_ratio = (short_segments / segment_count) if segment_count else 1.0
+    duration_seconds = audio_info.get("duration_seconds") or 0
+    chars_per_minute = (total_chars / (duration_seconds / 60.0)) if duration_seconds else None
+    segments_per_minute = (segment_count / (duration_seconds / 60.0)) if duration_seconds else None
+    compression_ratio = audio_info.get("compression_ratio")
+
+    if status != "success":
+        flags.append("failed")
+    if segment_count == 0:
+        flags.append("empty_transcript")
+    if compression_ratio is not None and compression_ratio < 0.35:
+        flags.append("heavy_compression")
+    if audio_info.get("target_bitrate_kbps") is not None and audio_info["target_bitrate_kbps"] <= 16:
+        flags.append("minimum_bitrate")
+    if duration_seconds and duration_seconds > 600 and segment_count < 20:
+        flags.append("too_few_segments_for_duration")
+    if chars_per_minute is not None and duration_seconds > 300 and chars_per_minute < 120:
+        flags.append("low_text_density")
+    if short_ratio > 0.2:
+        flags.append("many_short_or_empty_segments")
+    if used_engine == "Gemini":
+        flags.append("used_fallback_engine")
+    if error:
+        flags.append("error_recorded")
+
+    return {
+        "video_id": video.get("id"),
+        "title": video.get("title"),
+        "status": status,
+        "needs_review": bool(flags),
+        "flags": flags,
+        "engine": used_engine,
+        "segment_count": segment_count,
+        "total_chars": total_chars,
+        "duration_seconds": round(duration_seconds, 2) if duration_seconds else None,
+        "chars_per_minute": round(chars_per_minute, 1) if chars_per_minute is not None else None,
+        "segments_per_minute": round(segments_per_minute, 1) if segments_per_minute is not None else None,
+        "short_segment_ratio": round(short_ratio, 3),
+        "audio": audio_info,
+        "error": str(error) if error else None,
+        "checked_at": time.time(),
+    }
+
 import imageio_ffmpeg
 
 def compress_for_groq(audio_path, temp_dir):
     """Compress audio to fit under Groq's 25MB limit using embedded ffmpeg."""
+    global LAST_AUDIO_PROCESSING_INFO
     import re
     file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
-    if file_size_mb <= 24:
-        return audio_path  # Already small enough
-
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-    
-    # Dynamically calculate bitrate based on exact duration to target < 24MB
+
     dur_proc = subprocess.run([ffmpeg_exe, "-i", audio_path], capture_output=True, text=True)
     dur_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", dur_proc.stderr)
-    
-    target_bitrate = "16k"
+    total_seconds = 0
     if dur_match:
         hrs, mins, secs = float(dur_match.group(1)), float(dur_match.group(2)), float(dur_match.group(3))
         total_seconds = hrs * 3600 + mins * 60 + secs
-        if total_seconds > 0:
-            # Target 23MB = 23 * 1024 * 1024 * 8 bits
-            bps = int((23 * 1024 * 1024 * 8) / total_seconds)
-            bps = max(16000, min(64000, bps))  # cap at 64k, floor at 16k for acceptable quality
-            target_bitrate = f"{bps // 1000}k"
+
+    LAST_AUDIO_PROCESSING_INFO = {
+        "original_path": audio_path,
+        "original_size_mb": round(file_size_mb, 2),
+        "duration_seconds": round(total_seconds, 2) if total_seconds else None,
+        "compressed": False,
+        "sent_size_mb": round(file_size_mb, 2),
+        "compression_ratio": 1.0,
+        "target_bitrate_kbps": None,
+    }
+
+    if file_size_mb <= 24:
+        return audio_path
+
+    target_bitrate = "16k"
+    if total_seconds > 0:
+        bps = int((23 * 1024 * 1024 * 8) / total_seconds)
+        bps = max(16000, min(64000, bps))
+        target_bitrate = f"{bps // 1000}k"
 
     vid_name = os.path.splitext(os.path.basename(audio_path))[0]
     compressed_path = os.path.join(temp_dir, f"{vid_name}_compressed.m4a")
@@ -97,7 +184,14 @@ def compress_for_groq(audio_path, temp_dir):
         raise Exception(f"ffmpeg compression failed: {result.stderr[:200]}")
 
     new_size = os.path.getsize(compressed_path) / (1024 * 1024)
-    console.print(f"  [dim]📦 Compressed {file_size_mb:.1f}MB → {new_size:.1f}MB ({target_bitrate}bps mono 16kHz)[/dim]")
+    LAST_AUDIO_PROCESSING_INFO.update({
+        "compressed": True,
+        "compressed_path": compressed_path,
+        "sent_size_mb": round(new_size, 2),
+        "compression_ratio": round(new_size / file_size_mb, 3) if file_size_mb else None,
+        "target_bitrate_kbps": int(target_bitrate.replace("k", "")),
+    })
+    console.print(f"  [dim]Compressed {file_size_mb:.1f}MB -> {new_size:.1f}MB ({target_bitrate}bps mono 16kHz)[/dim]")
 
     return compressed_path
 
@@ -157,15 +251,18 @@ def transcribe_with_groq_direct(send_path, groq_api_key, progress=None, task_id=
     return transcript
 
 def transcribe_with_groq(audio_path, groq_api_key, temp_dir, progress=None, task_id=None):
-    """Primary: Transcribe using Groq Whisper, auto-chunking large files to bypass timeouts & limits."""
+    """Primary: Transcribe using Groq Whisper.
+
+    Short files are sent directly after light size checks. Long files are split first,
+    then only oversized chunks are compressed. This preserves more speech detail than
+    compressing an entire long video down to Groq's upload limit.
+    """
+    global LAST_AUDIO_PROCESSING_INFO
     import re
     import glob
 
-    # First, compress the audio to a standard low bitrate so it is easy to handle
-    send_path = compress_for_groq(audio_path, temp_dir)
-
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-    dur_proc = subprocess.run([ffmpeg_exe, "-i", send_path], capture_output=True, text=True)
+    dur_proc = subprocess.run([ffmpeg_exe, "-i", audio_path], capture_output=True, text=True)
     dur_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", dur_proc.stderr)
 
     total_seconds = 0
@@ -173,16 +270,15 @@ def transcribe_with_groq(audio_path, groq_api_key, temp_dir, progress=None, task
         hrs, mins, secs = float(dur_match.group(1)), float(dur_match.group(2)), float(dur_match.group(3))
         total_seconds = hrs * 3600 + mins * 60 + secs
 
-    # If the audio is short (e.g. less than 30 minutes), transcribe directly
     if total_seconds < 1800:
+        send_path = compress_for_groq(audio_path, temp_dir)
         if progress and task_id:
-            progress.update(task_id, description="[groq]🚀 Groq Whisper: Transcribing...[/groq]")
+            progress.update(task_id, description="[groq]Groq Whisper: Transcribing...[/groq]")
         try:
             transcript = transcribe_with_groq_direct(send_path, groq_api_key, progress, task_id)
             if progress and task_id:
                 progress.update(task_id, completed=100,
-                                 description=f"[success]✅ Groq Whisper Done ({len(transcript)} segments)[/success]")
-            # Cleanup
+                                 description=f"[success]Groq Whisper Done ({len(transcript)} segments)[/success]")
             if send_path != audio_path and os.path.exists(send_path):
                 try: os.remove(send_path)
                 except: pass
@@ -193,75 +289,78 @@ def transcribe_with_groq(audio_path, groq_api_key, temp_dir, progress=None, task
                 except: pass
             raise e
 
-    # Otherwise, split into 20-minute (1200 seconds) chunks
     chunk_time = 1200
     vid_name = os.path.splitext(os.path.basename(audio_path))[0]
-    chunk_pattern = os.path.join(temp_dir, f"chunk_{vid_name}_%03d.m4a")
+    source_ext = os.path.splitext(audio_path)[1] or ".m4a"
+    chunk_pattern = os.path.join(temp_dir, f"chunk_{vid_name}_%03d{source_ext}")
 
-    # Clean up old chunks
-    for old_chunk in glob.glob(os.path.join(temp_dir, f"chunk_{vid_name}_*.m4a")):
+    for old_chunk in glob.glob(os.path.join(temp_dir, f"chunk_{vid_name}_*")):
         try: os.remove(old_chunk)
         except: pass
 
     if progress and task_id:
-        progress.update(task_id, description="[groq]✂️ Groq Whisper: Splitting into chunks...[/groq]")
+        progress.update(task_id, description="[groq]Groq Whisper: Splitting original audio...[/groq]")
 
-    # Split using ffmpeg segment muxer
     split_proc = subprocess.run([
-        ffmpeg_exe, "-y", "-i", send_path,
+        ffmpeg_exe, "-y", "-i", audio_path,
         "-f", "segment", "-segment_time", str(chunk_time),
-        "-c", "copy", chunk_pattern
+        "-reset_timestamps", "1", "-c", "copy", chunk_pattern
     ], capture_output=True, text=True)
 
     if split_proc.returncode != 0:
-        if send_path != audio_path and os.path.exists(send_path):
-            try: os.remove(send_path)
-            except: pass
         raise Exception(f"Failed to split audio: {split_proc.stderr[:200]}")
 
-    chunks = sorted(glob.glob(os.path.join(temp_dir, f"chunk_{vid_name}_*.m4a")))
+    chunks = sorted(glob.glob(os.path.join(temp_dir, f"chunk_{vid_name}_*{source_ext}")))
     if not chunks:
-        if send_path != audio_path and os.path.exists(send_path):
-            try: os.remove(send_path)
-            except: pass
         raise Exception("No audio chunks generated")
 
     merged_transcript = []
+    chunk_audio_infos = []
     try:
         for idx, chunk_path in enumerate(chunks):
             if progress and task_id:
-                progress.update(task_id, description=f"[groq]🚀 Groq: Chunk {idx+1}/{len(chunks)}...[/groq]")
-            
-            chunk_transcript = transcribe_with_groq_direct(chunk_path, groq_api_key, progress, task_id)
-            
-            # Shift timestamps of segments in this chunk
+                progress.update(task_id, description=f"[groq]Groq: Chunk {idx+1}/{len(chunks)}...[/groq]")
+
+            send_chunk_path = compress_for_groq(chunk_path, temp_dir)
+            chunk_audio_infos.append(dict(LAST_AUDIO_PROCESSING_INFO))
+            chunk_transcript = transcribe_with_groq_direct(send_chunk_path, groq_api_key, progress, task_id)
+
             offset = idx * chunk_time
             for seg in chunk_transcript:
                 seg["start"] = round(seg["start"] + offset, 2)
                 merged_transcript.append(seg)
-                
-            # Clean up chunk file
+
+            if send_chunk_path != chunk_path and os.path.exists(send_chunk_path):
+                try: os.remove(send_chunk_path)
+                except: pass
             try: os.remove(chunk_path)
             except: pass
     finally:
-        # Final cleanup of remaining chunk files in case of errors
         for chunk_path in chunks:
             if os.path.exists(chunk_path):
                 try: os.remove(chunk_path)
                 except: pass
-        if send_path != audio_path and os.path.exists(send_path):
-            try: os.remove(send_path)
-            except: pass
+
+    original_size_mb = os.path.getsize(audio_path) / (1024 * 1024) if os.path.exists(audio_path) else None
+    sent_size_mb = sum(info.get("sent_size_mb") or 0 for info in chunk_audio_infos)
+    compressed_chunks = sum(1 for info in chunk_audio_infos if info.get("compressed"))
+    LAST_AUDIO_PROCESSING_INFO = {
+        "original_path": audio_path,
+        "original_size_mb": round(original_size_mb, 2) if original_size_mb is not None else None,
+        "duration_seconds": round(total_seconds, 2) if total_seconds else None,
+        "chunk_first": True,
+        "chunk_count": len(chunks),
+        "compressed_chunks": compressed_chunks,
+        "sent_size_mb": round(sent_size_mb, 2),
+        "compression_ratio": round(sent_size_mb / original_size_mb, 3) if original_size_mb else None,
+        "chunks": chunk_audio_infos,
+    }
 
     if progress and task_id:
         progress.update(task_id, completed=100,
-                         description=f"[success]✅ Groq Whisper Done ({len(merged_transcript)} segments via {len(chunks)} chunks)[/success]")
+                         description=f"[success]Groq Whisper Done ({len(merged_transcript)} segments via {len(chunks)} chunks)[/success]")
 
     return merged_transcript
-
-# ══════════════════════════════════════════════════════════════
-#  🤖 Gemini 2.0 Flash (Fallback Engine)
-# ══════════════════════════════════════════════════════════════
 
 def transcribe_with_gemini(audio_path, client, progress=None, task_id=None):
     """Fallback: Transcribe using Gemini 2.0 Flash."""
@@ -542,6 +641,7 @@ def main():
             ai_task = progress.add_task("[groq]🚀 AI Transcribing...[/groq]", total=None)
             transcript = None
             used_engine = None
+            quality_audio_info = {}
 
             # Try 1: Groq Whisper (fast, no daily limit)
             if groq_api_key:
@@ -550,6 +650,7 @@ def main():
                     transcript = transcribe_with_groq(audio_path, groq_api_key, temp_audio_dir, progress, ai_task)
                     elapsed = time.time() - t0
                     used_engine = "Groq"
+                    quality_audio_info = dict(LAST_AUDIO_PROCESSING_INFO)
                     groq_count += 1
                     console.print(f"  [groq]⚡ Groq Whisper took {elapsed:.1f}s[/groq]")
                 except Exception as e:
@@ -564,6 +665,7 @@ def main():
                     transcript = transcribe_with_gemini(audio_path, gemini_client, progress, ai_task)
                     elapsed = time.time() - t0
                     used_engine = "Gemini"
+                    quality_audio_info = {"original_path": audio_path, "original_size_mb": round(os.path.getsize(audio_path) / (1024 * 1024), 2) if os.path.exists(audio_path) else None, "compressed": False}
                     gemini_count += 1
                     console.print(f"  [gemini]🤖 Gemini took {elapsed:.1f}s[/gemini]")
                 except Exception as e:
@@ -571,6 +673,7 @@ def main():
 
             if not transcript:
                 console.print(f"[error]❌ All AI engines failed for {vid}[/error]\n")
+                append_quality_report(assess_transcript_quality(video, [], quality_audio_info, used_engine, status="failed", error="all_ai_engines_failed"))
                 failed_count += 1
                 progress.update(main_task, advance=1)
                 try:
@@ -593,6 +696,12 @@ def main():
                 from backend.utils.youtube import save_transcript_to_sqlite
                 save_transcript_to_sqlite(vid, transcript)
                 progress.update(save_task, completed=100, description="[green]✅ Saved to Database[/green]")
+
+                quality_entry = assess_transcript_quality(video, transcript, quality_audio_info, used_engine)
+                append_quality_report(quality_entry)
+                if quality_entry["needs_review"]:
+                    flag_text = ", ".join(quality_entry["flags"])
+                    console.print(f"[warning]Quality flags for {vid}: {flag_text}[/warning]")
 
                 success_count += 1
                 console.print(f"[success]🎉 {vid} done via {used_engine}! ({len(transcript)} segments)[/success]\n")
