@@ -165,11 +165,14 @@ def generate_embeddings_gemini(texts: List[str], api_key: str) -> List[List[floa
             
     return []
 
-def save_transcript_to_sqlite(video_id: str, transcript: list):
+def save_transcript_to_sqlite(video_id: str, transcript: list, generate_embeddings: Optional[bool] = None):
     try:
         from backend.utils.search_db import get_db_client
         from backend.utils.search import normalize_text
         import libsql_client
+
+        if generate_embeddings is None:
+            generate_embeddings = os.environ.get("ENABLE_INLINE_EMBEDDINGS", "").lower() in {"1", "true", "yes"}
         
         client = get_db_client()
         queries = []
@@ -177,12 +180,12 @@ def save_transcript_to_sqlite(video_id: str, transcript: list):
         # Clear existing records for this video to prevent duplicates
         queries.append(libsql_client.Statement("DELETE FROM transcripts WHERE video_id = ?", [video_id]))
         queries.append(libsql_client.Statement("DELETE FROM transcripts_fts WHERE video_id = ?", [video_id]))
-        
-        # Clear existing embeddings if vector table exists
-        try:
-            client.execute("DELETE FROM transcript_embeddings WHERE video_id = ?", [video_id])
-        except Exception:
-            pass
+        if generate_embeddings:
+            # Only clear embeddings when this run will regenerate them.
+            try:
+                client.execute("DELETE FROM transcript_embeddings WHERE video_id = ?", [video_id])
+            except Exception:
+                pass
             
         # Chunk transcripts into batches of 50 to optimize insertions (Multi-row Insert)
         batch_size = 50
@@ -227,7 +230,7 @@ def save_transcript_to_sqlite(video_id: str, transcript: list):
         # Generate and save embeddings if Gemini API key and remote Turso are active
         gemini_api_key = Config.GEMINI_API_KEY
         db_url = os.environ.get("TURSO_DATABASE_URL")
-        if gemini_api_key and db_url and "turso.io" in db_url:
+        if generate_embeddings and gemini_api_key and db_url and "turso.io" in db_url:
             try:
                 # Chunk transcript into batches of 100 to call Gemini batch embeddings
                 texts_to_embed = [line.get("text", "") for line in transcript]

@@ -105,3 +105,5 @@ talib_theme.css
 # One-off local binaries and media
 deno.exe
 *.m4a
+
+backend/cache/embedding_backfill_checkpoint.json
