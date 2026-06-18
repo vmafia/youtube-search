@@ -297,6 +297,45 @@ def search_vector(query_embedding: List[float], limit: int = 50, video_ids: List
     results.sort(key=lambda x: x["max_score"], reverse=True)
     return results[:limit]
 
+def fetch_full_transcript(video_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetches the full transcript for a single video from the relational table.
+    This is used by the full transcript modal when the prebuilt JSON cache is stale.
+    """
+    if not video_id:
+        return []
+
+    try:
+        client = get_db_client()
+    except Exception as e:
+        logger.error(f"Cannot connect to DB for full transcript: {e}")
+        return []
+
+    try:
+        rs = client.execute(
+            """
+            SELECT start_time, timestamp, text, speaker
+            FROM transcripts
+            WHERE video_id = ?
+            ORDER BY start_time ASC
+            """,
+            [video_id],
+        )
+        transcript = []
+        for row in rs.rows:
+            transcript.append({
+                "start": row[0],
+                "timestamp": row[1],
+                "text": row[2],
+                "speaker": row[3] if len(row) > 3 else None,
+            })
+        return transcript
+    except Exception as e:
+        logger.error(f"Error fetching full transcript for {video_id}: {e}")
+        return []
+    finally:
+        client.close()
+
 def get_db_stats() -> Dict[str, Any]:
     try:
         client = get_db_client()

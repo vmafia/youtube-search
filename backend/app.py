@@ -160,9 +160,15 @@ def get_video_transcript():
             transcript = check_and_convert_milliseconds(cached_transcript)
             return jsonify({"video_id": video_id, "transcript": transcript, "source": "document_cache"}), 200
 
+        from backend.utils.search_db import fetch_full_transcript
+        db_transcript = fetch_full_transcript(video_id)
+        if db_transcript:
+            transcript = check_and_convert_milliseconds(db_transcript)
+            return jsonify({"video_id": video_id, "transcript": transcript, "source": "database"}), 200
+
         if not allow_live_fetch:
             return jsonify({
-                "error": "ยังไม่มีสคริปต์นี้ในแคช กรุณารันงานจัดทำดัชนีสคริปต์ก่อนเปิดฉบับเต็ม",
+                "error": "ยังไม่พบสคริปต์ฉบับเต็มของคลิปนี้ในระบบ",
                 "status_code": 404
             }), 404
 
