@@ -579,7 +579,7 @@ def main():
 
             # Choose best audio format (webm typically works even when m4a gets 403)
             ydl_opts = {
-                'format': 'bestaudio',
+                'format': 'bestaudio/best',
                 'outtmpl': audio_path.replace('.m4a', '.%(ext)s'),
                 'quiet': True,
                 'no_warnings': True,
@@ -590,7 +590,7 @@ def main():
 
             # Check for existing audio file in different formats
             actual_audio_path = None
-            for ext in ['.m4a', '.webm', '.ogg', '.opus', '.mp3']:
+            for ext in ['.m4a', '.webm', '.ogg', '.opus', '.mp3', '.mp4', '.mkv']:
                 test_path = os.path.join(temp_audio_dir, f"{vid}{ext}")
                 if os.path.exists(test_path) and os.path.getsize(test_path) > 100 * 1024:
                     actual_audio_path = test_path
@@ -609,7 +609,7 @@ def main():
                         ydl.download([f"https://www.youtube.com/watch?v={vid}"])
                     
                     # Find which file format was actually downloaded
-                    for ext in ['.m4a', '.webm', '.ogg', '.opus', '.mp3']:
+                    for ext in ['.m4a', '.webm', '.ogg', '.opus', '.mp3', '.mp4', '.mkv']:
                         test_path = os.path.join(temp_audio_dir, f"{vid}{ext}")
                         if os.path.exists(test_path):
                             actual_audio_path = test_path
