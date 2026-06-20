@@ -177,6 +177,7 @@ export function App() {
     if (!seconds || seconds <= 0) return "กำลังคำนวณเวลา...";
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
+    if (m === 0) return "\u0E04\u0E32\u0E14\u0E27\u0E48\u0E32\u0E08\u0E30\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E43\u0E19\u0E2D\u0E35\u0E01\u0E44\u0E21\u0E48\u0E16\u0E36\u0E07 1 \u0E19\u0E32\u0E17\u0E35";
     if (h > 0) return `คาดว่าจะเสร็จในอีกประมาณ ${h} ชม. ${m} นาที`;
     return `คาดว่าจะเสร็จในอีกประมาณ ${m} นาที`;
   };
@@ -202,7 +203,7 @@ export function App() {
         clearInterval(statsInterval);
       };
     }
-  }, [activeTab, videos]);
+  }, [activeTab]);
 
   // Debounce threshold updates to prevent lag during slider movement
   useEffect(() => {
@@ -226,6 +227,20 @@ export function App() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3000);
   };
+
+  useEffect(() => {
+    if (activeTranscriptVideoId) {
+      document.body.style.overflow = "hidden";
+      const handleEscape = (e: KeyboardEvent) => {
+        if (e.key === "Escape") setActiveTranscriptVideoId(null);
+      };
+      document.addEventListener("keydown", handleEscape);
+      return () => {
+        document.body.style.overflow = "";
+        document.removeEventListener("keydown", handleEscape);
+      };
+    }
+  }, [activeTranscriptVideoId]);
 
   const fetchVideos = async (targetChannel: string) => {
     if (!targetChannel.trim()) return;
@@ -455,6 +470,7 @@ export function App() {
   };
 
   const handleSummarizeVideo = async (videoId: string) => {
+    if (videoSummaries[videoId]?.loading) return;
     setVideoSummaries(prev => ({
       ...prev,
       [videoId]: { loading: true }
@@ -549,6 +565,7 @@ export function App() {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
     const s = secs % 60;
+    if (m === 0) return "\u0E04\u0E32\u0E14\u0E27\u0E48\u0E32\u0E08\u0E30\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E43\u0E19\u0E2D\u0E35\u0E01\u0E44\u0E21\u0E48\u0E16\u0E36\u0E07 1 \u0E19\u0E32\u0E17\u0E35";
     if (h > 0) {
       return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
     }
@@ -655,9 +672,9 @@ export function App() {
               </div>
               {searchHistory.length > 0 && (
                 <div className="history-row">
-                  {searchHistory.map((h, i) => (
+                  {searchHistory.map((h) => (
                     <span
-                      key={i}
+                      key={h}
                       className="history-tag"
                       onClick={() => {
                         setSearchQuery(h);
@@ -917,7 +934,8 @@ export function App() {
                                 "
                                 {(() => {
                                   if (!searchQuery.trim()) return match.text;
-                                  const parts = match.text.split(new RegExp(`(${searchQuery.trim()})`, 'gi'));
+                                  const escaped = searchQuery.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                  const parts = match.text.split(new RegExp(`(${escaped})`, 'gi'));
                                   return parts.map((part, i) => 
                                     part.toLowerCase() === searchQuery.trim().toLowerCase() 
                                       ? <mark key={i} className="glow">{part}</mark> 
@@ -1077,13 +1095,13 @@ export function App() {
                       กำลังซิงค์ทีละ 8 คลิป...
                     </span>
                     <span style={{ fontWeight: "600" }}>
-                      คลิปที่ {syncProgress.current}/{syncProgress.total} ({Math.round((syncProgress.current / syncProgress.total) * 100)}%)
+                      คลิปที่ {syncProgress.current}/{syncProgress.total} ({syncProgress.total > 0 ? Math.round((syncProgress.current / syncProgress.total) * 100) : 0}%)
                     </span>
                   </div>
                   <div className="live-progress-bg">
                     <div 
                       className="live-progress-fill" 
-                      style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
+                      style={{ width: `${syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0}%` }}
                     ></div>
                   </div>
                 </div>
@@ -1130,13 +1148,13 @@ export function App() {
                         {getProgressStateLabel(transcriptionStatus.progress_state)}
                       </span>
                       <span style={{ fontWeight: "600" }}>
-                        คลิปที่ {transcriptionStatus.current_index}/{transcriptionStatus.total_to_process} ({Math.round((transcriptionStatus.current_index / transcriptionStatus.total_to_process) * 100)}%)
+                        คลิปที่ {transcriptionStatus.current_index}/{transcriptionStatus.total_to_process} ({transcriptionStatus.total_to_process > 0 ? Math.round((transcriptionStatus.current_index / transcriptionStatus.total_to_process) * 100) : 0}%)
                       </span>
                     </div>
                     <div className="cartoon-progress-bar">
                       <div 
                         className="cartoon-progress-fill" 
-                        style={{ width: `${(transcriptionStatus.current_index / transcriptionStatus.total_to_process) * 100}%` }}
+                        style={{ width: `${transcriptionStatus.total_to_process > 0 ? (transcriptionStatus.current_index / transcriptionStatus.total_to_process) * 100 : 0}%` }}
                       ></div>
                     </div>
                     

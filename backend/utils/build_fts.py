@@ -9,6 +9,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def check_and_convert_milliseconds(val):
+    try:
+        val = float(val)
+    except (TypeError, ValueError):
+        return 0.0
     if val > 100000:
         return val / 1000.0
     return val
@@ -48,6 +52,9 @@ def build_fts_db(cache_dir="backend/cache", db_path="backend/cache/search.db"):
         )
     """)
     
+    # 1.2 Create transcribed_videos table
+    c.execute("CREATE TABLE IF NOT EXISTS transcribed_videos (video_id TEXT PRIMARY KEY)")
+    
     # 1.5. Create standard transcripts table with indexes
     c.execute("""
         CREATE TABLE transcripts (
@@ -55,7 +62,8 @@ def build_fts_db(cache_dir="backend/cache", db_path="backend/cache/search.db"):
             start_time REAL,
             timestamp TEXT,
             text TEXT,
-            norm_text TEXT
+            norm_text TEXT,
+            speaker TEXT
         )
     """)
     c.execute("CREATE INDEX idx_transcripts_video_start ON transcripts(video_id, start_time)")

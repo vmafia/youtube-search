@@ -1636,3 +1636,22 @@ mark.glow::after {
   font-size: 1.75rem;
   font-weight: 900;
 }
+
+
+.filter-pill {
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  background-color: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--br);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.filter-pill:hover {
+  background-color: var(--bg3);
+}
+.filter-pill.active {
+  background-color: var(--teal);
+  color: white;
+  border-color: var(--teal);
+}

@@ -1,6 +1,9 @@
 import os
 from dotenv import load_dotenv
 import secrets
+import logging
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -11,7 +14,11 @@ class Config:
     # YouTube API
     YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-    ADMIN_SECRET = os.environ.get("ADMIN_SECRET") or secrets.token_hex(16)
+    
+    ADMIN_SECRET = os.environ.get("ADMIN_SECRET")
+    if not ADMIN_SECRET:
+        ADMIN_SECRET = secrets.token_hex(16)
+        logger.warning(f"ADMIN_SECRET not set in environment. Generated new random secret: {ADMIN_SECRET}")
     
     # Cache and limits
     IS_VERCEL = os.environ.get("VERCEL") == "1"

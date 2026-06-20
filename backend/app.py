@@ -132,7 +132,10 @@ def get_channel_videos():
         raise ValueError("channel_name parameter is required")
         
     try:
-        limit = data.get("limit", 5000)
+        try:
+            limit = min(max(int(data.get("limit", 5000)), 1), 10000)
+        except (TypeError, ValueError):
+            limit = 5000
         videos = youtube_client.fetch_channel_videos(channel_name, limit=limit)
         return jsonify({"videos": videos}), 200
     except Exception as e:
@@ -180,35 +183,38 @@ def get_video_transcript():
         raise e
 
 
+import threading
 # Global in-memory cache for transcripts
 global_transcripts_cache = None
+_cache_lock = threading.Lock()
 
 def load_all_transcripts():
     global global_transcripts_cache
-    if global_transcripts_cache is not None:
-        return global_transcripts_cache
-        
-    import gzip, json
-    # Try writable cache dir first (e.g., /tmp on Vercel)
-    path = os.path.join(youtube_client.db_manager.writable_cache_dir, "all_transcripts.json.gz")
-    if not os.path.exists(path):
-        # Fallback to bundled cache dir
-        path = os.path.join(youtube_client.db_manager.bundled_cache_dir, "all_transcripts.json.gz")
-        
-    if os.path.exists(path):
-        try:
-            logger.info(f"Loading all_transcripts from {path} into memory...")
-            with gzip.open(path, "rt", encoding="utf-8") as f:
-                global_transcripts_cache = json.load(f)
-            logger.info(f"Loaded {len(global_transcripts_cache)} transcripts into memory.")
-        except Exception as e:
-            logger.error(f"Failed to load global transcripts: {e}")
+    with _cache_lock:
+        if global_transcripts_cache is not None:
+            return global_transcripts_cache
+            
+        import gzip, json
+        # Try writable cache dir first (e.g., /tmp on Vercel)
+        path = os.path.join(youtube_client.db_manager.writable_cache_dir, "all_transcripts.json.gz")
+        if not os.path.exists(path):
+            # Fallback to bundled cache dir
+            path = os.path.join(youtube_client.db_manager.bundled_cache_dir, "all_transcripts.json.gz")
+            
+        if os.path.exists(path):
+            try:
+                logger.info(f"Loading all_transcripts from {path} into memory...")
+                with gzip.open(path, "rt", encoding="utf-8") as f:
+                    global_transcripts_cache = json.load(f)
+                logger.info(f"Loaded {len(global_transcripts_cache)} transcripts into memory.")
+            except Exception as e:
+                logger.error(f"Failed to load global transcripts: {e}")
+                global_transcripts_cache = {}
+        else:
+            logger.warning("all_transcripts.json.gz not found anywhere!")
             global_transcripts_cache = {}
-    else:
-        logger.warning("all_transcripts.json.gz not found anywhere!")
-        global_transcripts_cache = {}
-        
-    return global_transcripts_cache
+            
+        return global_transcripts_cache
 
 @app.route("/api/search", methods=["POST"])
 @limiter.limit("30 per minute")
@@ -325,7 +331,7 @@ def summarize_video():
         }), 200
     except Exception as e:
         logger.error(f"Error summarizing video {video_id}: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "การสรุปวิดีโอล้มเหลว กรุณาลองใหม่อีกครั้ง"}), 500
 
 
 @app.route("/api/bulk-index", methods=["POST"])
@@ -438,7 +444,7 @@ def bulk_sync_cc():
             try:
                 raw_transcript = YouTubeTranscriptApi.get_transcript(vid, languages=['th'])
                 # Format to our schema
-                transcript = youtube_client._format_transcript(raw_transcript)
+                transcript = [{"text": s["text"], "start": s["start"], "duration": s["duration"]} for s in raw_transcript]
                 # Save to Turso using Batch write
                 save_transcript_to_sqlite(vid, transcript)
                 success += 1
@@ -506,7 +512,7 @@ def chat():
             return jsonify({"error": "No user message found"}), 400
 
         # Optional: Channel filter
-        channel_name = data.get("channel_name", "").strip()
+        channel_name = sanitize_input(data.get("channel_name", ""))
 
         # Start of streaming response
         from flask import Response, stream_with_context
@@ -527,7 +533,7 @@ def chat():
                 
                 try:
                     llm_response = generate_completion(extraction_prompt, stream=False)
-                    if llm_response and "error" not in llm_response.lower():
+                    if llm_response and llm_response.strip():
                         keywords = llm_response.strip()
                         logger.info(f"LLM extracted keywords: {keywords}")
                     else:

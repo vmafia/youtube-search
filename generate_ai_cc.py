@@ -91,6 +91,7 @@ def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
         'format': 'm4a/bestaudio/best',
         'outtmpl': output_path,
         'no_warnings': True,
+        'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
     }
     if cookies_file:
         ydl_opts['cookiefile'] = cookies_file

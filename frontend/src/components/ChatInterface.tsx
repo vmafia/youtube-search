@@ -197,7 +197,7 @@ export function ChatInterface({ videos = [] }: ChatInterfaceProps) {
       let done = false;
       let assistantText = "";
       let buffer = "";
-      let finalMsgs = [...msgsWithLoading];
+      let finalMsgs = msgsWithLoading.map(msg => ({...msg}));
       
       while (!done) {
         const { value, done: readerDone } = await reader.read();

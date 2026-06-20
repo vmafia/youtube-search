@@ -158,86 +158,87 @@ def search_sqlite_fts(query: Any, limit: int = 50, video_ids: List[str] = None) 
     """
     
     try:
-        rs = client.execute(sql, params)
-        rows = rs.rows
-    except Exception as e:
-        logger.error(f"Turso FTS5 error: {e}")
-        client.close()
-        return []
-        
-    # Group by video_id
-    grouped_results = {}
-    for row in rows:
-        vid = row[0]
-        start_time = row[1]
-        timestamp = row[2]
-        text = row[3]
-        score = row[4]
-        
-        if vid not in grouped_results:
-            grouped_results[vid] = {
-                "video_id": vid,
-                "max_score": 0,
-                "matches": []
-            }
-        
-        # Calculate a normalized score for UI consistency.
-        if score < 0:
-            # FTS5 BM25 score: more negative is better (e.g. -0.5 -> 91%, -5.0 -> 100%)
-            score_val = -score
-            ui_score = 90 + min(10, score_val * 2)
-        else:
-            # Fallback LIKE query has score = 0
-            ui_score = 85.0
-        
-        grouped_results[vid]["matches"].append({
-            "timestamp": timestamp,
-            "start": start_time,
-            "text": text,
-            "score": ui_score,
-            "speaker": None  # will be filled in below
-        })
-        
-        if ui_score > grouped_results[vid]["max_score"]:
-            grouped_results[vid]["max_score"] = ui_score
-            
-    # Sort by max_score and limit FIRST, then fetch speaker only for final results
-    results = list(grouped_results.values())
-    results.sort(key=lambda x: x["max_score"], reverse=True)
-    results = results[:limit]
-    
-    # Batch-fetch speaker for only the final result matches (much fewer rows than JOIN)
-    final_keys = set()
-    for r in results:
-        for m in r["matches"]:
-            final_keys.add((r["video_id"], m["start"]))
-    
-    if final_keys:
         try:
-            # Build a single query with UNION ALL for targeted index lookups
-            parts = []
-            sp_params = []
-            for vid, st in final_keys:
-                parts.append("SELECT video_id, start_time, speaker FROM transcripts WHERE video_id = ? AND start_time = ?")
-                sp_params.extend([vid, st])
-            
-            # Safeguard: if too many params, skip speaker enrichment
-            if len(sp_params) <= 1800:
-                sp_sql = " UNION ALL ".join(parts)
-                sp_rs = client.execute(sp_sql, sp_params)
-                speaker_map = {}
-                for sp_row in sp_rs.rows:
-                    speaker_map[(sp_row[0], sp_row[1])] = sp_row[2]
-                
-                # Fill in speaker data
-                for r in results:
-                    for m in r["matches"]:
-                        m["speaker"] = speaker_map.get((r["video_id"], m["start"]))
+            rs = client.execute(sql, params)
+            rows = rs.rows
         except Exception as e:
-            logger.warning(f"Speaker enrichment failed (non-critical): {e}")
-    
-    client.close()
-    return results
+            logger.error(f"Turso FTS5 error: {e}")
+            return []
+            
+        # Group by video_id
+        grouped_results = {}
+        for row in rows:
+            vid = row[0]
+            start_time = row[1]
+            timestamp = row[2]
+            text = row[3]
+            score = row[4]
+            
+            if vid not in grouped_results:
+                grouped_results[vid] = {
+                    "video_id": vid,
+                    "max_score": 0,
+                    "matches": []
+                }
+            
+            # Calculate a normalized score for UI consistency.
+            if score < 0:
+                # FTS5 BM25 score: more negative is better (e.g. -0.5 -> 91%, -5.0 -> 100%)
+                score_val = -score
+                ui_score = 90 + min(10, score_val * 2)
+            else:
+                # Fallback LIKE query has score = 0
+                ui_score = 85.0
+            
+            grouped_results[vid]["matches"].append({
+                "timestamp": timestamp,
+                "start": start_time,
+                "text": text,
+                "score": ui_score,
+                "speaker": None  # will be filled in below
+            })
+            
+            if ui_score > grouped_results[vid]["max_score"]:
+                grouped_results[vid]["max_score"] = ui_score
+                
+        # Sort by max_score and limit FIRST, then fetch speaker only for final results
+        results = list(grouped_results.values())
+        results.sort(key=lambda x: x["max_score"], reverse=True)
+        results = results[:limit]
+        
+        # Batch-fetch speaker for only the final result matches (much fewer rows than JOIN)
+        final_keys = set()
+        for r in results:
+            for m in r["matches"]:
+                final_keys.add((r["video_id"], m["start"]))
+        
+        if final_keys:
+            try:
+                # Build a single query with UNION ALL for targeted index lookups
+                parts = []
+                sp_params = []
+                for vid, st in final_keys:
+                    parts.append("SELECT video_id, start_time, speaker FROM transcripts WHERE video_id = ? AND start_time = ?")
+                    sp_params.extend([vid, st])
+                
+                # Safeguard: if too many params, skip speaker enrichment
+                if len(sp_params) <= 1800:
+                    sp_sql = " UNION ALL ".join(parts)
+                    sp_rs = client.execute(sp_sql, sp_params)
+                    speaker_map = {}
+                    for sp_row in sp_rs.rows:
+                        speaker_map[(sp_row[0], sp_row[1])] = sp_row[2]
+                    
+                    # Fill in speaker data
+                    for r in results:
+                        for m in r["matches"]:
+                            m["speaker"] = speaker_map.get((r["video_id"], m["start"]))
+            except Exception as e:
+                logger.warning(f"Speaker enrichment failed (non-critical): {e}")
+        
+        return results
+    finally:
+        client.close()
 
 def search_vector(query_embedding: List[float], limit: int = 50, video_ids: List[str] = None) -> List[Dict[str, Any]]:
     """
@@ -438,7 +439,6 @@ def fetch_batch_surrounding_context(items: List[Dict[str, Any]], window_seconds:
         return {}
         
     # Build conditions
-    conditions = []
     params = []
     query_parts = []
     for item in items:
@@ -471,8 +471,11 @@ def fetch_batch_surrounding_context(items: List[Dict[str, Any]], window_seconds:
             
             # Filter and sort segments in the window
             if vid in grouped:
-                segments_in_window = [text for start_time, text in grouped[vid] if lower <= start_time <= upper]
-                result_map[(vid, start)] = " ".join(segments_in_window)
+                segments_in_window = sorted(
+                    [(st, text) for st, text in grouped[vid] if lower <= st <= upper],
+                    key=lambda x: x[0]
+                )
+                result_map[(vid, start)] = " ".join([text for _, text in segments_in_window])
             else:
                 result_map[(vid, start)] = item.get("text", "")
                 

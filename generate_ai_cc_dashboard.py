@@ -584,6 +584,7 @@ def main():
                 'quiet': True,
                 'no_warnings': True,
                 'progress_hooks': [hook],
+                'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
             }
             if cookies_file:
                 ydl_opts['cookiefile'] = cookies_file
