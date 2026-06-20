@@ -585,6 +585,7 @@ def main():
                 'no_warnings': True,
                 'progress_hooks': [hook],
                 'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
+                'extractor_args': {'youtube': ['player_client=android,ios']},
             }
             if cookies_file:
                 ydl_opts['cookiefile'] = cookies_file
