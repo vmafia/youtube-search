@@ -90,14 +90,12 @@ def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
     ydl_opts = {
         'format': 'm4a/bestaudio[protocol^=http]/bestaudio/best',
         'outtmpl': output_path,
+        'quiet': True,
+        'no_warnings': True,
         'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
-        'extractor_args': {'youtube': ['player_client=web,tv,-android_sdkless']},
     }
     if cookies_file:
         ydl_opts['cookiefile'] = cookies_file
-    else:
-        browser = os.environ.get('YT_DLP_COOKIES_BROWSER', 'chrome')
-        ydl_opts['cookiesfrombrowser'] = (browser,)
     
     
     if progress_cb:

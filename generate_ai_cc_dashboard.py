@@ -586,15 +586,13 @@ def main():
             ydl_opts = {
                 'format': 'm4a/bestaudio[protocol^=http]/bestaudio/best',
                 'outtmpl': audio_path.replace('.m4a', '.%(ext)s'),
+                'quiet': True,
+                'no_warnings': True,
                 'progress_hooks': [hook],
                 'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
-                'extractor_args': {'youtube': ['player_client=web,tv,-android_sdkless']},
             }
             if cookies_file:
                 ydl_opts['cookiefile'] = cookies_file
-            else:
-                browser = os.environ.get('YT_DLP_COOKIES_BROWSER', 'chrome')
-                ydl_opts['cookiesfrombrowser'] = (browser,)
 
             # Check for existing audio file in different formats
             actual_audio_path = None
