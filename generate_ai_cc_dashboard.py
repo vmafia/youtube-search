@@ -160,7 +160,9 @@ def compress_for_groq(audio_path, temp_dir):
         "target_bitrate_kbps": None,
     }
 
-    if file_size_mb <= 24:
+    valid_exts = ['.flac', '.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.ogg', '.wav', '.webm']
+    ext = os.path.splitext(audio_path)[1].lower()
+    if file_size_mb <= 24 and ext in valid_exts:
         return audio_path
 
     target_bitrate = "16k"
@@ -208,7 +210,10 @@ def transcribe_with_groq_direct(send_path, groq_api_key, progress=None, task_id=
     for attempt in range(max_retries):
         try:
             with open(send_path, "rb") as f:
-                files = {"file": (os.path.basename(send_path), f)}
+                filename = os.path.basename(send_path)
+                ext = os.path.splitext(filename)[1].lower()
+                mime = "audio/mp4" if ext in [".m4a", ".mp4"] else "audio/mpeg" if ext == ".mp3" else "audio/webm" if ext == ".webm" else "application/octet-stream"
+                files = {"file": (filename, f, mime)}
                 data = {
                     "model": "whisper-large-v3-turbo",
                     "response_format": "verbose_json",
@@ -581,14 +586,14 @@ def main():
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': audio_path.replace('.m4a', '.%(ext)s'),
-                'quiet': True,
-                'no_warnings': True,
                 'progress_hooks': [hook],
                 'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
-                'extractor_args': {'youtube': ['player_client=android,ios']},
             }
             if cookies_file:
                 ydl_opts['cookiefile'] = cookies_file
+            else:
+                browser = os.environ.get('YT_DLP_COOKIES_BROWSER', 'chrome')
+                ydl_opts['cookiesfrombrowser'] = (browser,)
 
             # Check for existing audio file in different formats
             actual_audio_path = None

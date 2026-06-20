@@ -723,6 +723,10 @@ class YouTubeClient:
         if os.path.exists(cookies_path):
             cmd.extend(["--cookies", cookies_path])
             logger.info(f"Using cookies from {cookies_path} in yt-dlp fallback")
+        else:
+            browser = os.environ.get('YT_DLP_COOKIES_BROWSER', 'chrome')
+            cmd.extend(["--cookies-from-browser", browser])
+            logger.info(f"Using cookies from {browser} browser in yt-dlp fallback")
             
         cmd.append(video_url)
         
