@@ -88,7 +88,7 @@ def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
             break
 
     ydl_opts = {
-        'format': 'm4a/bestaudio/best',
+        'format': 'm4a/bestaudio[protocol^=http]/bestaudio/best',
         'outtmpl': output_path,
         'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
         'extractor_args': {'youtube': ['player_client=web,tv,-android_sdkless']},

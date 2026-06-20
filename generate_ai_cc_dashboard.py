@@ -584,7 +584,7 @@ def main():
 
             # Choose best audio format (webm typically works even when m4a gets 403)
             ydl_opts = {
-                'format': 'bestaudio/best',
+                'format': 'm4a/bestaudio[protocol^=http]/bestaudio/best',
                 'outtmpl': audio_path.replace('.m4a', '.%(ext)s'),
                 'progress_hooks': [hook],
                 'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
