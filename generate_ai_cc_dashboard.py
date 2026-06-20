@@ -588,6 +588,7 @@ def main():
                 'outtmpl': audio_path.replace('.m4a', '.%(ext)s'),
                 'progress_hooks': [hook],
                 'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
+                'extractor_args': {'youtube': ['player_client=web,tv,-android_sdkless']},
             }
             if cookies_file:
                 ydl_opts['cookiefile'] = cookies_file
