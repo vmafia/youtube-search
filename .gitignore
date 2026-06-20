@@ -109,3 +109,5 @@ deno.exe
 backend/cache/embedding_backfill_checkpoint.json
 
 backend/cache/transcription_quality_report.json
+
+cookies_new.bak
