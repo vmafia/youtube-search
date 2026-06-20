@@ -272,7 +272,7 @@ def save_transcript_to_sqlite(video_id: str, transcript: list, generate_embeddin
         ))
         
         client.batch(queries)
-        client.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES('optimize')")
+        # client.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES('optimize')")
         client.close()
         logger.info(f"Successfully synced transcript for video {video_id} to Turso FTS & relational tables.")
     except Exception as e:
