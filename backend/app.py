@@ -234,13 +234,14 @@ def search():
     from backend.utils.search_db import search_sqlite_fts, search_vector
     fts_results = search_sqlite_fts(expanded_queries, limit=50, video_ids=video_ids if video_ids else None)
 
-    # Run Vector Search if Gemini API key and remote Turso are active
+    # Try semantic search if Voyage API key is present
     vector_results = []
     db_url = os.environ.get("TURSO_DATABASE_URL")
-    if gemini_key and db_url and "turso.io" in db_url:
+    voyage_key = os.environ.get("VOYAGE_API_KEY")
+    if voyage_key and db_url and "turso.io" in db_url:
         try:
-            from backend.utils.youtube import generate_embeddings_gemini
-            query_embs = generate_embeddings_gemini([query], gemini_key)
+            from backend.utils.youtube import generate_embeddings_voyage
+            query_embs = generate_embeddings_voyage([query], voyage_key)
             if query_embs:
                 vector_results = search_vector(query_embs[0], limit=50, video_ids=video_ids if video_ids else None)
         except Exception as ve:
@@ -566,7 +567,7 @@ def chat():
                     try:
                         from backend.utils.youtube import generate_embeddings_gemini
                         from backend.utils.search_db import search_vector
-                        query_embs = generate_embeddings_gemini([last_message], gemini_key)
+                        query_embs = generate_embeddings_voyage([last_message], os.environ.get("VOYAGE_API_KEY"))
                         if query_embs:
                             vector_results = search_vector(query_embs[0], limit=5)
                     except Exception as ve:
@@ -670,3 +671,4 @@ def chat():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=Config.DEBUG)
+

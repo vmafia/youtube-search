@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from backend.config import Config
 from backend.utils.search_db import ensure_tables, get_db_client
-from backend.utils.youtube import generate_embeddings_gemini
+from backend.utils.youtube import generate_embeddings_voyage
 
 load_dotenv()
 
@@ -81,17 +81,17 @@ def save_embeddings(client, video_id: str, rows: list[dict], embeddings: list[li
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Backfill Gemini embeddings for existing transcripts.")
+    parser = argparse.ArgumentParser(description="Backfill Voyage embeddings for existing transcripts.")
     parser.add_argument("--limit-videos", type=int, default=25, help="Maximum videos to process in this run.")
-    parser.add_argument("--embed-batch-size", type=int, default=50, help="Texts per Gemini embedding request.")
+    parser.add_argument("--embed-batch-size", type=int, default=128, help="Texts per Voyage embedding request.")
     parser.add_argument("--insert-batch-size", type=int, default=50, help="Embeddings per DB insert batch.")
-    parser.add_argument("--sleep", type=float, default=2.0, help="Seconds to pause between Gemini calls.")
+    parser.add_argument("--sleep", type=float, default=0.5, help="Seconds to pause between Voyage calls.")
     args = parser.parse_args()
 
-    api_key = Config.GEMINI_API_KEY
+    api_key = os.environ.get("VOYAGE_API_KEY")
     db_url = os.environ.get("TURSO_DATABASE_URL")
     if not api_key:
-        raise SystemExit("GEMINI_API_KEY is missing.")
+        raise SystemExit("VOYAGE_API_KEY is missing.")
     if not db_url or "turso.io" not in db_url:
         raise SystemExit("TURSO_DATABASE_URL must point to Turso for vector embeddings.")
 
@@ -115,7 +115,7 @@ def main() -> None:
         print(f"[{index}/{len(video_ids)}] {video_id}: {len(texts)} segments")
         for start in range(0, len(texts), args.embed_batch_size):
             batch_texts = texts[start:start + args.embed_batch_size]
-            batch_embeddings = generate_embeddings_gemini(batch_texts, api_key)
+            batch_embeddings = generate_embeddings_voyage(batch_texts, api_key)
             embeddings.extend(batch_embeddings)
             print(f"  embedded {len(embeddings)}/{len(texts)}")
             time.sleep(args.sleep)

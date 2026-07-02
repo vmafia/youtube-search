@@ -60,7 +60,7 @@ def ensure_tables(client):
         db_url = os.environ.get("TURSO_DATABASE_URL")
         if db_url and "turso.io" in db_url:
             try:
-                client.execute("CREATE TABLE IF NOT EXISTS transcript_embeddings (video_id TEXT, start_time REAL, embedding F32_BLOB(768))")
+                client.execute("CREATE TABLE IF NOT EXISTS transcript_embeddings (video_id TEXT, start_time REAL, embedding F32_BLOB(1024))")
                 client.execute("CREATE INDEX IF NOT EXISTS idx_embeddings ON transcript_embeddings (libsql_vector_idx(embedding, 'metric=cosine'))")
                 logger.info("Turso vector table and index verified/created.")
             except Exception as ve:

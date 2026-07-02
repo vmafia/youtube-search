@@ -128,40 +128,34 @@ def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0):
 
 from backend.utils.db import DatabaseManager
 
-def generate_embeddings_gemini(texts: List[str], api_key: str) -> List[List[float]]:
-    """Generates embeddings for a batch of texts using Gemini API with automatic retry on 429."""
+def generate_embeddings_voyage(texts: List[str], api_key: str) -> List[List[float]]:
+    """Generates embeddings for a batch of texts using Voyage API with automatic retry on 429."""
     if not api_key or not texts:
         return []
         
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents?key={api_key}"
-    headers = {"Content-Type": "application/json"}
+    url = "https://api.voyageai.com/v1/embeddings"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
     
-    requests_data = []
-    for text in texts:
-        requests_data.append({
-            "model": "models/gemini-embedding-2",
-            "content": {
-                "parts": [{"text": text}]
-            },
-            "outputDimensionality": 768
-        })
-        
+    # Voyage AI allows batching, usually up to 128 texts per request
     max_retries = 10
     for attempt in range(max_retries):
         try:
-            r = requests.post(url, headers=headers, json={"requests": requests_data}, timeout=30)
+            r = requests.post(url, headers=headers, json={"input": texts, "model": "voyage-multilingual-2"}, timeout=30)
             if r.status_code == 200:
                 res_data = r.json()
-                return [emb["values"] for emb in res_data.get("embeddings", [])]
+                return [emb["embedding"] for emb in res_data.get("data", [])]
             elif r.status_code == 429:
-                wait_time = min(15, (2 ** attempt) * 2 + 5)  # Cap wait time to 15s max
-                logger.warning(f"Gemini embedding rate limit (429). Waiting {wait_time}s (retry {attempt+1}/{max_retries})...")
+                wait_time = min(30, (2 ** attempt) * 2 + 5)
+                logger.warning(f"Voyage AI rate limit (429). Waiting {wait_time}s (retry {attempt+1}/{max_retries})...")
                 time.sleep(wait_time)
             else:
-                logger.warning(f"Gemini embedding batch failed with status code {r.status_code}: {r.text}")
+                logger.warning(f"Voyage AI embedding batch failed with status code {r.status_code}: {r.text}")
                 break
         except Exception as e:
-            logger.error(f"Error calling Gemini batch embeddings (attempt {attempt+1}/{max_retries}): {e}")
+            logger.error(f"Error calling Voyage AI batch embeddings (attempt {attempt+1}/{max_retries}): {e}")
             time.sleep(5)
             
     return []
@@ -228,18 +222,18 @@ def save_transcript_to_sqlite(video_id: str, transcript: list, generate_embeddin
             queries.append(libsql_client.Statement(sql_transcripts, params_transcripts))
             queries.append(libsql_client.Statement(sql_fts, params_fts))
             
-        # Generate and save embeddings if Gemini API key and remote Turso are active
-        gemini_api_key = Config.GEMINI_API_KEY
+        # Generate and save embeddings if Voyage API key and remote Turso are active
+        voyage_api_key = os.environ.get("VOYAGE_API_KEY")
         db_url = os.environ.get("TURSO_DATABASE_URL")
-        if generate_embeddings and gemini_api_key and db_url and "turso.io" in db_url:
+        if generate_embeddings and voyage_api_key and db_url and "turso.io" in db_url:
             try:
-                # Chunk transcript into batches of 100 to call Gemini batch embeddings
+                # Chunk transcript into batches of 128 to call Voyage batch embeddings
                 texts_to_embed = [line.get("text", "") for line in transcript]
                 embeddings = []
-                emb_batch_size = 100
+                emb_batch_size = 128
                 for j in range(0, len(texts_to_embed), emb_batch_size):
                     batch_texts = texts_to_embed[j:j+emb_batch_size]
-                    batch_embs = generate_embeddings_gemini(batch_texts, gemini_api_key)
+                    batch_embs = generate_embeddings_voyage(batch_texts, voyage_api_key)
                     embeddings.extend(batch_embs)
                     
                 if len(embeddings) == len(transcript):
