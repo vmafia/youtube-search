@@ -22,7 +22,7 @@ from backend.utils.search_db import ensure_tables, get_db_client
 from backend.utils.youtube import generate_embeddings_voyage
 
 load_dotenv()
-console = Console(force_terminal=True, force_interactive=True)
+console = Console()
 
 CHECKPOINT_PATH = Path("backend/cache/embedding_backfill_checkpoint.json")
 
@@ -77,8 +77,8 @@ def fetch_video_title(client, video_id: str) -> str:
 
     title = _title_map.get(video_id)
     if title:
-        if len(title) > 40:
-            return title[:37] + "..."
+        if len(title) > 25:
+            return title[:22] + "..."
         return title
         
     return video_id
@@ -166,7 +166,8 @@ def main() -> None:
                 continue
 
             video_title = fetch_video_title(client, video_id)
-            video_task = progress.add_task(f"[yellow]Embedding {video_id} ({len(texts)} segments)[/yellow] | [cyan]{video_title}[/cyan]", total=len(texts))
+            progress.console.print(f"\n[bold yellow]🎬 Processing {index}/{len(video_ids)}:[/bold yellow] [cyan]{video_title}[/cyan]")
+            video_task = progress.add_task(f"[yellow]Embedding ({len(texts)} chunks)[/yellow]", total=len(texts))
 
             for start in range(0, len(texts), args.embed_batch_size):
                 batch_texts = texts[start:start + args.embed_batch_size]
