@@ -21,6 +21,8 @@ from backend.config import Config
 from backend.utils.search_db import ensure_tables, get_db_client
 from backend.utils.youtube import generate_embeddings_voyage
 
+import logging
+
 load_dotenv()
 console = Console()
 
@@ -144,6 +146,9 @@ def main() -> None:
     failed = 0
     start_time = time.time()
 
+    # Suppress ALL loggers during progress to prevent stderr corruption
+    logging.disable(logging.CRITICAL)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -152,10 +157,12 @@ def main() -> None:
         TimeRemainingColumn(),
         console=console,
         transient=False,
+        redirect_stdout=False,
+        redirect_stderr=False,
     ) as progress:
         
         overall_task = progress.add_task("[bold cyan]Overall Progress", total=len(video_ids))
-        video_task = progress.add_task("[yellow]Initializing...[/yellow]", total=1)
+        status_task = progress.add_task("[yellow]Initializing...[/yellow]", total=None)
         
         for index, video_id in enumerate(video_ids, start=1):
             rows = fetch_transcript_rows(client, video_id)
@@ -167,8 +174,8 @@ def main() -> None:
                 continue
 
             video_title = fetch_video_title(client, video_id)
-            progress.print(f"\n[bold yellow]🎬 Processing {index}/{len(video_ids)}:[/bold yellow] [cyan]{video_title}[/cyan]")
-            progress.update(video_task, description=f"[yellow]Embedding ({len(texts)} chunks)[/yellow]", total=len(texts), completed=0)
+            short_title = video_title[:40] + "..." if len(video_title) > 40 else video_title
+            progress.update(status_task, description=f"[yellow]🎬 {index}/{len(video_ids)}: {short_title} ({len(texts)} chunks)[/yellow]")
 
             is_success = True
             for start in range(0, len(texts), args.embed_batch_size):
@@ -176,16 +183,17 @@ def main() -> None:
                 batch_embeddings = generate_embeddings_voyage(batch_texts, api_key)
                 
                 if not batch_embeddings:
-                    progress.print(f"[red]❌ {video_id} Failed (Got {len(embeddings)}/{len(texts)})[/red]")
+                    progress.update(status_task, description=f"[red]❌ {video_id} Failed (Got {len(embeddings)}/{len(texts)})[/red]")
                     is_success = False
                     break
                     
                 embeddings.extend(batch_embeddings)
-                progress.update(video_task, advance=len(batch_texts))
+                done_pct = len(embeddings) * 100 // len(texts)
+                progress.update(status_task, description=f"[cyan]Embedding {short_title}... {done_pct}%[/cyan]")
                 time.sleep(args.sleep)
 
             if len(embeddings) == len(rows):
-                progress.update(video_task, description=f"[green]Saving {video_id} to database...[/green]")
+                progress.update(status_task, description=f"[green]💾 Saving {video_id}...[/green]")
                 save_embeddings(client, video_id, rows, embeddings, args.insert_batch_size)
                 
                 done.add(video_id)
@@ -195,13 +203,16 @@ def main() -> None:
                 save_checkpoint(checkpoint)
                 
                 success += 1
-                progress.update(video_task, description=f"[bold green]✅ {video_id} Complete![/bold green]", completed=len(texts))
+                progress.update(status_task, description=f"[bold green]✅ {video_id} Complete![/bold green]")
             else:
                 failed += 1
-                progress.update(video_task, description=f"[bold red]❌ {video_id} Failed (Got {len(embeddings)}/{len(rows)})[/bold red]")
+                progress.update(status_task, description=f"[bold red]❌ {video_id} Failed (Got {len(embeddings)}/{len(rows)})[/bold red]")
 
             progress.update(overall_task, advance=1)
             time.sleep(1)
+
+    # Re-enable loggers after progress is done
+    logging.disable(logging.NOTSET)
 
     # Final Summary
     total_time = time.time() - start_time

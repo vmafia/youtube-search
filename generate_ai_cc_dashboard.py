@@ -3,6 +3,7 @@ import sys
 import io
 import time
 import json
+import logging
 import subprocess
 import argparse
 import requests
@@ -15,6 +16,13 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
 from rich.theme import Theme
 from rich.table import Table
+
+
+class _SilentLogger:
+    """A silent logger for yt-dlp to prevent stderr output from corrupting Rich progress."""
+    def debug(self, msg): pass
+    def warning(self, msg): pass
+    def error(self, msg): pass
 
 # Force UTF-8 safely for Windows without breaking rich terminal detection
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -194,7 +202,7 @@ def compress_for_groq(audio_path, temp_dir):
         "compression_ratio": round(new_size / file_size_mb, 3) if file_size_mb else None,
         "target_bitrate_kbps": int(target_bitrate.replace("k", "")),
     })
-    progress.console.print(f"  [dim]Compressed {file_size_mb:.1f}MB -> {new_size:.1f}MB ({target_bitrate}bps mono 16kHz)[/dim]")
+    console.print(f"  [dim]Compressed {file_size_mb:.1f}MB -> {new_size:.1f}MB ({target_bitrate}bps mono 16kHz)[/dim]")
 
     return compressed_path
 
@@ -226,13 +234,13 @@ def transcribe_with_groq_direct(send_path, groq_api_key, progress=None, task_id=
                 break
             elif response.status_code == 429:
                 wait = 30 * (attempt + 1)
-                progress.console.print(f"[warning]⏳ Groq rate limit. Waiting {wait}s (retry {attempt+1}/{max_retries})...[/warning]")
+                console.print(f"[warning]⏳ Groq rate limit. Waiting {wait}s (retry {attempt+1}/{max_retries})...[/warning]")
                 time.sleep(wait)
             else:
                 error_msg = response.json().get("error", {}).get("message", response.text[:300])
                 raise Exception(f"Groq {response.status_code}: {error_msg}")
         except requests.exceptions.Timeout:
-            progress.console.print(f"[warning]⏳ Groq timeout. Retrying {attempt+1}/{max_retries}...[/warning]")
+            console.print(f"[warning]⏳ Groq timeout. Retrying {attempt+1}/{max_retries}...[/warning]")
             time.sleep(10)
         except Exception as e:
             if attempt == max_retries - 1:
@@ -419,7 +427,7 @@ def transcribe_with_gemini(audio_path, client, progress=None, task_id=None):
             error_str = str(e).lower()
             if "429" in error_str or "quota" in error_str or "rate" in error_str or "exhausted" in error_str:
                 wait_time = 60 if attempt < 3 else 300
-                progress.console.print(f"[warning]⏳ Gemini rate limit. Waiting {wait_time}s (retry {attempt+1}/{max_retries})...[/warning]")
+                console.print(f"[warning]⏳ Gemini rate limit. Waiting {wait_time}s (retry {attempt+1}/{max_retries})...[/warning]")
                 time.sleep(wait_time)
             else:
                 try:
@@ -468,7 +476,7 @@ def get_missing_videos(channel_name: str) -> list:
     transcribed_ids_raw = stats.get("transcribed_ids")
     # Safety: if DB returned None (error), abort to prevent re-processing everything
     if transcribed_ids_raw is None:
-        progress.console.print(f"[error]❌ Database error: {stats.get('error', 'unknown')}. Aborting to prevent duplicate processing.[/error]")
+        console.print(f"[error]❌ Database error: {stats.get('error', 'unknown')}. Aborting to prevent duplicate processing.[/error]")
         sys.exit(1)
     transcribed_ids = set(transcribed_ids_raw)
 
@@ -495,13 +503,13 @@ def main():
             pass
 
     if not groq_api_key and not gemini_client:
-        progress.console.print("[error]❌ No AI API keys found! Set GROQ_API_KEY or GEMINI_API_KEY in .env[/error]")
+        console.print("[error]❌ No AI API keys found! Set GROQ_API_KEY or GEMINI_API_KEY in .env[/error]")
         sys.exit(1)
 
     db_manager = DatabaseManager(Config.CACHE_DIR)
 
     # ── Header ──
-    progress.console.print(Panel.fit(
+    console.print(Panel.fit(
         "[bold cyan]🚀 Assabiqoon AI Transcription (Terminal)[/bold cyan]\n"
         "[dim]────────────────────────────────────────────────[/dim]\n"
         f" 🥇 [bold green]Primary:[/bold green]  {'Groq Whisper large-v3-turbo 🟢' if groq_api_key else '❌ Not configured'}\n"
@@ -520,10 +528,10 @@ def main():
 
     total = len(missing_videos)
     if total == 0:
-        progress.console.print("[success]🎉 No missing videos! All caught up![/success]")
+        console.print("[success]🎉 No missing videos! All caught up![/success]")
         return
 
-    progress.console.print(f"\n[success]📋 Found {total} videos to transcribe![/success]\n")
+    console.print(f"\n[success]📋 Found {total} videos to transcribe![/success]\n")
 
     temp_audio_dir = os.path.join(Config.CACHE_DIR, "temp_audio")
     os.makedirs(temp_audio_dir, exist_ok=True)
@@ -540,30 +548,29 @@ def main():
         BarColumn(complete_style="green", finished_style="bold green"),
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TimeRemainingColumn(),
-        console=console
+        console=console,
+        redirect_stdout=False,
+        redirect_stderr=False,
     )
+
+    # Suppress ALL loggers during progress to prevent stderr corruption
+    logging.disable(logging.CRITICAL)
 
     with progress:
         main_task = progress.add_task("[bold cyan]🎬 Overall Progress[/bold cyan]", total=total)
-        dl_task = progress.add_task("[cyan]📥 Downloading Audio...[/cyan]", total=100, visible=False)
-        transcribe_task = progress.add_task("[magenta]🤖 Transcribing...[/magenta]", total=1, visible=False)
-        ai_task = progress.add_task("[groq]🧠 AI Transcribing...[/groq]", total=None, visible=False)
-        save_task = progress.add_task("[blue]💾 Saving to Database...[/blue]", total=None, visible=False)
+        status_task = progress.add_task("[dim]Initializing...[/dim]", total=None)
 
         for i, video in enumerate(missing_videos, 1):
             vid = video["id"]
             title = video["title"]
             audio_path = os.path.join(temp_audio_dir, f"{vid}.m4a")
 
-            progress.print(Panel(
-                f"[bold yellow]📺 Processing {i}/{total}:[/bold yellow] {title}\n"
-                f"[dim]ID: {vid}  |  ✅ {success_count}  ❌ {failed_count}  |  "
-                f"Groq: {groq_count}  Gemini: {gemini_count}[/dim]",
-                border_style="yellow"
-            ))
+            # Show current video info
+            short_title = title[:40] + "..." if len(title) > 40 else title
+            progress.update(status_task, description=f"[yellow]📺 {i}/{total}: {short_title}[/yellow]")
 
             # ── Step 1: Download Audio ──
-            progress.update(dl_task, completed=0, visible=True)
+            progress.update(status_task, description=f"[cyan]📥 Downloading {vid}...[/cyan]")
 
             def hook(d):
                 if d['status'] == 'downloading':
@@ -571,7 +578,8 @@ def main():
                     p_str = d.get('_percent_str', '0%').replace('%', '').strip()
                     p_str = re.sub(r'\x1b\[[0-9;]*m', '', p_str)
                     try:
-                        progress.update(dl_task, completed=float(p_str))
+                        pct = float(p_str)
+                        progress.update(status_task, description=f"[cyan]📥 Downloading {vid}... {pct:.0f}%[/cyan]")
                     except:
                         pass
 
@@ -588,13 +596,16 @@ def main():
                     break
 
             # Choose best audio format (webm typically works even when m4a gets 403)
+            _ydl_logger = _SilentLogger()
             ydl_opts = {
-                'format': 'm4a/bestaudio[protocol^=http]/bestaudio/best',
+                'format': '251/bestaudio[ext=webm]/bestaudio/best',
                 'outtmpl': audio_path.replace('.m4a', '.%(ext)s'),
                 'quiet': True,
                 'no_warnings': True,
                 'progress_hooks': [hook],
                 'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
+                'rm_cachedir': True,  # Clear cache to fix 403 Forbidden
+                'logger': _ydl_logger,  # Prevent yt-dlp stderr from corrupting Rich progress
             }
             if cookies_file:
                 ydl_opts['cookiefile'] = cookies_file
@@ -612,8 +623,7 @@ def main():
             dl_ok = False
             if actual_audio_path:
                 file_mb = os.path.getsize(actual_audio_path) / (1024 * 1024)
-                progress.update(dl_task, completed=100, description="[green]✅ Audio Cached[/green]")
-                progress.console.print(f"  [dim]📁 Cached file: {file_mb:.1f} MB ({os.path.basename(actual_audio_path)})[/dim]")
+                progress.update(status_task, description=f"[green]✅ Audio Cached ({file_mb:.1f}MB)[/green]")
                 dl_ok = True
                 audio_path = actual_audio_path
             else:
@@ -629,30 +639,21 @@ def main():
                             break
                     
                     if actual_audio_path:
-                        progress.update(dl_task, completed=100, description="[green]✅ Audio Downloaded[/green]")
-                        file_mb = os.path.getsize(actual_audio_path) / (1024 * 1024)
-                        progress.console.print(f"  [dim]📁 File size: {file_mb:.1f} MB ({os.path.basename(actual_audio_path)})[/dim]")
+                        progress.update(status_task, description="[green]✅ Audio Downloaded[/green]")
                         dl_ok = True
                         audio_path = actual_audio_path
                     else:
                         raise FileNotFoundError("Could not locate downloaded audio file with expected extension.")
                 except Exception as e:
-                    progress.console.print(f"[error]❌ Download failed: {e}[/error]")
-                    progress.update(dl_task, description="[red]❌ Download Failed[/red]")
-
+                    progress.update(status_task, description=f"[red]❌ Download Failed: {str(e)[:50]}[/red]")
 
             if not dl_ok:
                 failed_count += 1
                 progress.update(main_task, advance=1)
-                try:
-                    progress.remove_task(dl_task)
-                except:
-                    pass
                 continue
 
             # ── Step 2: Transcribe (Groq → Gemini fallback) ──
-            ai_task_desc = f"[groq]🧠 AI Transcribing...[/groq]"
-            progress.update(ai_task, description=ai_task_desc, completed=0, visible=True)
+            progress.update(status_task, description="[magenta]🧠 AI Transcribing (Groq)...[/magenta]")
             transcript = None
             used_engine = None
             quality_audio_info = {}
@@ -661,40 +662,34 @@ def main():
             if groq_api_key:
                 try:
                     t0 = time.time()
-                    transcript = transcribe_with_groq(audio_path, groq_api_key, temp_audio_dir, progress, ai_task)
+                    transcript = transcribe_with_groq(audio_path, groq_api_key, temp_audio_dir, progress, status_task)
                     elapsed = time.time() - t0
                     used_engine = "Groq"
                     quality_audio_info = dict(LAST_AUDIO_PROCESSING_INFO)
                     groq_count += 1
-                    progress.console.print(f"  [groq]⚡ Groq Whisper took {elapsed:.1f}s[/groq]")
+                    progress.update(status_task, description=f"[magenta]⚡ Groq done in {elapsed:.1f}s[/magenta]")
                 except Exception as e:
-                    progress.console.print(f"[warning]⚠️ Groq failed: {e}[/warning]")
-                    progress.console.print("[info]↪ Switching to Gemini fallback...[/info]")
+                    progress.update(status_task, description=f"[yellow]⚠️ Groq failed, trying Gemini...[/yellow]")
 
             # Try 2: Gemini (fallback)
             if not transcript and gemini_client:
                 try:
-                    progress.update(ai_task, description="[gemini]🤖 Gemini fallback...[/gemini]")
+                    progress.update(status_task, description="[blue]🤖 Gemini fallback...[/blue]")
                     t0 = time.time()
-                    transcript = transcribe_with_gemini(audio_path, gemini_client, progress, ai_task)
+                    transcript = transcribe_with_gemini(audio_path, gemini_client, progress, status_task)
                     elapsed = time.time() - t0
                     used_engine = "Gemini"
                     quality_audio_info = {"original_path": audio_path, "original_size_mb": round(os.path.getsize(audio_path) / (1024 * 1024), 2) if os.path.exists(audio_path) else None, "compressed": False}
                     gemini_count += 1
-                    progress.console.print(f"  [gemini]🤖 Gemini took {elapsed:.1f}s[/gemini]")
+                    progress.update(status_task, description=f"[blue]🤖 Gemini done in {elapsed:.1f}s[/blue]")
                 except Exception as e:
-                    progress.console.print(f"[error]❌ Gemini also failed: {e}[/error]")
+                    progress.update(status_task, description=f"[red]❌ Gemini also failed[/red]")
 
             if not transcript:
-                progress.console.print(f"[error]❌ All AI engines failed for {vid}[/error]\n")
+                progress.update(status_task, description=f"[red]❌ All AI engines failed for {vid}[/red]")
                 append_quality_report(assess_transcript_quality(video, [], quality_audio_info, used_engine, status="failed", error="all_ai_engines_failed"))
                 failed_count += 1
                 progress.update(main_task, advance=1)
-                try:
-                    progress.remove_task(dl_task)
-                    progress.remove_task(ai_task)
-                except:
-                    pass
                 # Cleanup audio
                 if os.path.exists(audio_path):
                     try:
@@ -704,23 +699,19 @@ def main():
                 continue
 
             # ── Step 3: Save to Database ──
-            progress.update(save_task, completed=0, visible=True)
+            progress.update(status_task, description="[blue]💾 Saving to Database...[/blue]")
             try:
                 db_manager.set_document("transcripts", vid, transcript)
                 from backend.utils.youtube import save_transcript_to_sqlite
                 save_transcript_to_sqlite(vid, transcript)
-                progress.update(save_task, completed=100, description="[green]✅ Saved to Database[/green]")
+                progress.update(status_task, description=f"[green]🎉 {vid} done via {used_engine} ({len(transcript)} segments)[/green]")
 
                 quality_entry = assess_transcript_quality(video, transcript, quality_audio_info, used_engine)
                 append_quality_report(quality_entry)
-                if quality_entry["needs_review"]:
-                    flag_text = ", ".join(quality_entry["flags"])
-                    progress.console.print(f"[warning]Quality flags for {vid}: {flag_text}[/warning]")
 
                 success_count += 1
-                progress.console.print(f"[success]🎉 {vid} done via {used_engine}! ({len(transcript)} segments)[/success]\n")
             except Exception as e:
-                progress.console.print(f"[error]❌ Save failed: {e}[/error]\n")
+                progress.update(status_task, description=f"[red]❌ Save failed: {str(e)[:50]}[/red]")
                 failed_count += 1
 
             # ── Cleanup ──
@@ -731,15 +722,12 @@ def main():
                     pass
 
             progress.update(main_task, advance=1)
-            try:
-                progress.remove_task(dl_task)
-                progress.remove_task(ai_task)
-                progress.remove_task(save_task)
-            except:
-                pass
 
             # Brief pause between videos (respect API)
             time.sleep(2)
+
+    # Re-enable loggers after progress is done
+    logging.disable(logging.NOTSET)
 
     # ══════════════════════════════════════════════════════════
     #  📊 Final Summary
@@ -756,10 +744,10 @@ def main():
     summary.add_row("🚀 Via Groq Whisper", str(groq_count))
     summary.add_row("🤖 Via Gemini", str(gemini_count))
     summary.add_row("⏱️ Total Time", f"{minutes}m {seconds}s")
-    progress.console.print(summary)
+    console.print(summary)
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        progress.console.print("\n[warning]🛑 Process stopped by user.[/warning]")
+        console.print("\n[warning]🛑 Process stopped by user.[/warning]")

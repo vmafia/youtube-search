@@ -88,12 +88,19 @@ def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
             cookies_file = path_script
             break
 
+    class _SilentLogger:
+        def debug(self, msg): pass
+        def warning(self, msg): pass
+        def error(self, msg): pass
+
     ydl_opts = {
-        'format': 'm4a/bestaudio[protocol^=http]/bestaudio/best',
+        'format': '251/bestaudio[ext=webm]/bestaudio/best',
         'outtmpl': output_path,
         'quiet': True,
         'no_warnings': True,
         'js_runtimes': {'node': {}},  # ใช้ Node.js แก้ YouTube n challenge
+        'rm_cachedir': True,  # Clear cache to fix 403 Forbidden
+        'logger': _SilentLogger(),
     }
     if cookies_file:
         ydl_opts['cookiefile'] = cookies_file
