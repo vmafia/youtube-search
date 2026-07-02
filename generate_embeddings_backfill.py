@@ -22,7 +22,7 @@ from backend.utils.search_db import ensure_tables, get_db_client
 from backend.utils.youtube import generate_embeddings_voyage
 
 load_dotenv()
-console = Console()
+console = Console(force_terminal=True, force_interactive=True)
 
 CHECKPOINT_PATH = Path("backend/cache/embedding_backfill_checkpoint.json")
 

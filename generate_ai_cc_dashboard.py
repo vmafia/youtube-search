@@ -46,7 +46,7 @@ custom_theme = Theme({
     "groq": "bold magenta",
     "gemini": "bold blue",
 })
-console = Console(theme=custom_theme)
+console = Console(theme=custom_theme, force_terminal=True, force_interactive=True)
 
 # ══════════════════════════════════════════════════════════════
 #  Helper Functions
