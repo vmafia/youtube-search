@@ -60,16 +60,27 @@ def fetch_transcript_rows(client, video_id: str) -> list[dict]:
     return [{"start": row[0], "text": row[1]} for row in rs.rows]
 
 
+# Global title map for fast lookups
+_title_map = None
+
 def fetch_video_title(client, video_id: str) -> str:
-    try:
-        rs = client.execute("SELECT title FROM videos WHERE video_id = ?", [video_id])
-        if rs.rows and rs.rows[0][0]:
-            title = rs.rows[0][0]
-            if len(title) > 40:
-                return title[:37] + "..."
-            return title
-    except Exception:
-        pass
+    global _title_map
+    if _title_map is None:
+        try:
+            from backend.utils.youtube import YouTubeClient
+            yt_client = YouTubeClient()
+            # This will load from cache instantly if available
+            videos = yt_client.fetch_channel_videos("@AssabiqoonPublisher", limit=5000)
+            _title_map = {v["id"]: v["title"] for v in videos}
+        except Exception:
+            _title_map = {}
+
+    title = _title_map.get(video_id)
+    if title:
+        if len(title) > 40:
+            return title[:37] + "..."
+        return title
+        
     return video_id
 
 
