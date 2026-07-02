@@ -60,6 +60,19 @@ def fetch_transcript_rows(client, video_id: str) -> list[dict]:
     return [{"start": row[0], "text": row[1]} for row in rs.rows]
 
 
+def fetch_video_title(client, video_id: str) -> str:
+    try:
+        rs = client.execute("SELECT title FROM videos WHERE video_id = ?", [video_id])
+        if rs.rows and rs.rows[0][0]:
+            title = rs.rows[0][0]
+            if len(title) > 40:
+                return title[:37] + "..."
+            return title
+    except Exception:
+        pass
+    return video_id
+
+
 def save_embeddings(client, video_id: str, rows: list[dict], embeddings: list[list[float]], batch_size: int) -> None:
     statements = [libsql_client.Statement("DELETE FROM transcript_embeddings WHERE video_id = ?", [video_id])]
 
@@ -141,7 +154,8 @@ def main() -> None:
                 progress.update(overall_task, advance=1)
                 continue
 
-            video_task = progress.add_task(f"[yellow]Embedding {video_id} ({len(texts)} segments)[/yellow]", total=len(texts))
+            video_title = fetch_video_title(client, video_id)
+            video_task = progress.add_task(f"[yellow]Embedding {video_id} ({len(texts)} segments)[/yellow] | [cyan]{video_title}[/cyan]", total=len(texts))
 
             for start in range(0, len(texts), args.embed_batch_size):
                 batch_texts = texts[start:start + args.embed_batch_size]
