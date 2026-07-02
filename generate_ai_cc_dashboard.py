@@ -593,6 +593,8 @@ def main():
             }
             if cookies_file:
                 ydl_opts['cookiefile'] = cookies_file
+            elif os.environ.get('YT_DLP_COOKIES_BROWSER'):
+                ydl_opts['cookiesfrombrowser'] = (os.environ.get('YT_DLP_COOKIES_BROWSER'), )
 
             # Check for existing audio file in different formats
             actual_audio_path = None

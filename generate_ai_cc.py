@@ -96,8 +96,9 @@ def download_audio(video_id: str, output_path: str, progress_cb=None) -> bool:
     }
     if cookies_file:
         ydl_opts['cookiefile'] = cookies_file
-    
-    
+    elif os.environ.get('YT_DLP_COOKIES_BROWSER'):
+        ydl_opts['cookiesfrombrowser'] = (os.environ.get('YT_DLP_COOKIES_BROWSER'), )
+        
     if progress_cb:
         last_update = [0]
         def hook(d):
