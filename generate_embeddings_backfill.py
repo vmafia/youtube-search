@@ -155,6 +155,7 @@ def main() -> None:
     ) as progress:
         
         overall_task = progress.add_task("[bold cyan]Overall Progress", total=len(video_ids))
+        video_task = progress.add_task("[yellow]Initializing...[/yellow]", total=1)
         
         for index, video_id in enumerate(video_ids, start=1):
             rows = fetch_transcript_rows(client, video_id)
@@ -166,20 +167,21 @@ def main() -> None:
                 continue
 
             video_title = fetch_video_title(client, video_id)
-            progress.console.print(f"\n[bold yellow]🎬 Processing {index}/{len(video_ids)}:[/bold yellow] [cyan]{video_title}[/cyan]")
-            video_task = progress.add_task(f"[yellow]Embedding ({len(texts)} chunks)[/yellow]", total=len(texts))
+            progress.print(f"\n[bold yellow]🎬 Processing {index}/{len(video_ids)}:[/bold yellow] [cyan]{video_title}[/cyan]")
+            progress.update(video_task, description=f"[yellow]Embedding ({len(texts)} chunks)[/yellow]", total=len(texts), completed=0)
 
+            is_success = True
             for start in range(0, len(texts), args.embed_batch_size):
                 batch_texts = texts[start:start + args.embed_batch_size]
                 batch_embeddings = generate_embeddings_voyage(batch_texts, api_key)
                 
-                if batch_embeddings:
-                    embeddings.extend(batch_embeddings)
-                    progress.update(video_task, advance=len(batch_texts))
-                else:
-                    # Failed to get embeddings for this batch (likely rate limit retries exhausted)
+                if not batch_embeddings:
+                    progress.print(f"[red]❌ {video_id} Failed (Got {len(embeddings)}/{len(texts)})[/red]")
+                    is_success = False
                     break
                     
+                embeddings.extend(batch_embeddings)
+                progress.update(video_task, advance=len(batch_texts))
                 time.sleep(args.sleep)
 
             if len(embeddings) == len(rows):
