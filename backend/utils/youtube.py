@@ -133,16 +133,17 @@ def generate_embeddings_gemini(texts: List[str], api_key: str) -> List[List[floa
     if not api_key or not texts:
         return []
         
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents?key={api_key}"
     headers = {"Content-Type": "application/json"}
     
     requests_data = []
     for text in texts:
         requests_data.append({
-            "model": "models/text-embedding-004",
+            "model": "models/gemini-embedding-2",
             "content": {
                 "parts": [{"text": text}]
-            }
+            },
+            "outputDimensionality": 768
         })
         
     max_retries = 10
