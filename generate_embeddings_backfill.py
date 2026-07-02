@@ -42,14 +42,11 @@ def save_checkpoint(data: dict) -> None:
 
 
 def fetch_video_ids(client, limit: int) -> list[str]:
+    # Use DISTINCT for fast lookup instead of full table scan + grouping
     rs = client.execute(
         """
-        SELECT t.video_id
-        FROM transcripts t
-        LEFT JOIN transcript_embeddings e ON t.video_id = e.video_id
-        GROUP BY t.video_id
-        HAVING COUNT(e.start_time) = 0
-        ORDER BY t.video_id
+        SELECT DISTINCT video_id 
+        FROM transcripts 
         LIMIT ?
         """,
         [limit],
